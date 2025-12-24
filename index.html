@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Real-Time Temp Mail</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/dist/css/all.min.css">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap');
+        body {
+            font-family: 'Outfit', sans-serif;
+            background-color: #050505;
+            color: #ffffff;
+            min-height: 100vh;
+        }
+        .glow-border {
+            border: 1px solid rgba(56, 189, 248, 0.3);
+            box-shadow: 0 0 15px rgba(56, 189, 248, 0.1);
+        }
+        .mail-card:hover {
+            background: rgba(255, 255, 255, 0.05);
+            transform: translateY(-2px);
+        }
+        .loader {
+            border-top-color: #38bdf8;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+<body class="p-4 md:p-10 flex flex-col items-center">
+
+    <!-- Header -->
+    <div class="w-full max-w-2xl text-center mb-10">
+        <h1 class="text-4xl font-extrabold mb-2 tracking-tight">
+            <span class="text-sky-500">REAL</span> TEMP MAIL
+        </h1>
+        <p class="text-gray-400 text-sm italic">Ab asli emails receive honge yahan!</p>
+    </div>
+
+    <!-- Email Box -->
+    <div class="w-full max-w-2xl bg-zinc-900/50 p-6 rounded-3xl glow-border mb-8">
+        <div class="flex flex-col md:flex-row gap-3">
+            <div class="flex-1 relative">
+                <input type="text" id="email-address" readonly
+                    class="w-full bg-black border border-zinc-800 p-4 rounded-2xl text-sky-400 font-bold outline-none"
+                    value="Fetching email...">
+                <button id="copy-btn" class="absolute right-3 top-3 bg-zinc-800 p-2 px-4 rounded-xl hover:bg-zinc-700 transition">
+                    <i class="fas fa-copy"></i>
+                </button>
+            </div>
+            <button id="new-email-btn" class="bg-sky-600 hover:bg-sky-500 text-white font-bold p-4 rounded-2xl transition-all flex items-center justify-center gap-2">
+                <i class="fas fa-random"></i> New
+            </button>
+        </div>
+        <div class="mt-4 flex items-center justify-center gap-2 text-[10px] text-gray-500 uppercase tracking-widest">
+            <span class="inline-block w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
+            System Online & Checking for Mails
+        </div>
+    </div>
+
+    <!-- Inbox -->
+    <div class="w-full max-w-2xl">
+        <div class="flex justify-between items-center mb-4 px-2">
+            <h2 class="text-xl font-bold italic">Inbox</h2>
+            <button onclick="fetchMessages()" class="text-xs text-sky-500 hover:underline">Manual Refresh</button>
+        </div>
+
+        <div id="inbox" class="space-y-3">
+            <!-- Loading message or Empty state -->
+            <div id="status-msg" class="text-center py-20 text-zinc-600 border-2 border-dashed border-zinc-800 rounded-3xl">
+                <div class="loader w-8 h-8 border-4 border-zinc-700 rounded-full mx-auto mb-4"></div>
+                Emails ka intezar hai...
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal for reading mail -->
+    <div id="mail-modal" class="fixed inset-0 bg-black/90 backdrop-blur-md hidden z-50 flex items-center justify-center p-4">
+        <div class="bg-zinc-900 w-full max-w-2xl rounded-3xl overflow-hidden border border-zinc-800">
+            <div class="p-6 border-b border-zinc-800 flex justify-between items-start">
+                <div>
+                    <h3 id="modal-subject" class="text-xl font-bold text-sky-400"></h3>
+                    <p id="modal-from" class="text-gray-500 text-sm"></p>
+                </div>
+                <button onclick="closeModal()" class="text-zinc-500 hover:text-white"><i class="fas fa-times text-2xl"></i></button>
+            </div>
+            <div id="modal-body" class="p-6 overflow-y-auto max-h-[60vh] text-gray-300 leading-relaxed">
+                <!-- Content -->
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_URL = 'https://api.mail.tm';
+        let account = null;
+        let token = null;
+
+        // 1. Get Domain and Create Account
+        async function createAccount() {
+            try {
+                document.getElementById('email-address').value = "Creating...";
+                
+                // Get available domains
+                const domainRes = await fetch(`${API_URL}/domains`);
+                const domainData = await domainRes.json();
+                const domain = domainData['hydra:member'][0].domain;
+
+                // Generate random credentials
+                const id = Math.random().toString(36).substring(2, 12);
+                const address = `${id}@${domain}`;
+                const password = 'password123';
+
+                // Create account
+                const createRes = await fetch(`${API_URL}/accounts`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ address, password })
+                });
+
+                if (!createRes.ok) throw new Error("Account creation failed");
+
+                // Get Token
+                const tokenRes = await fetch(`${API_URL}/token`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ address, password })
+                });
+                const tokenData = await tokenRes.json();
+                token = tokenData.token;
+                account = address;
+
+                document.getElementById('email-address').value = address;
+                fetchMessages();
+            } catch (err) {
+                console.error(err);
+                document.getElementById('email-address').value = "Error! Try again.";
+            }
+        }
+
+        // 2. Fetch Messages
+        async function fetchMessages() {
+            if (!token) return;
+
+            try {
+                const res = await fetch(`${API_URL}/messages`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                const data = await res.json();
+                const messages = data['hydra:member'];
+
+                const inboxEl = document.getElementById('inbox');
+                const statusEl = document.getElementById('status-msg');
+
+                if (messages.length === 0) {
+                    statusEl.innerHTML = `
+                        <div class="loader w-8 h-8 border-4 border-zinc-700 rounded-full mx-auto mb-4"></div>
+                        Inbox khali hai. Abhi tak koi mail nahi aaya.
+                    `;
+                    return;
+                }
+
+                statusEl.classList.add('hidden');
+                inboxEl.innerHTML = ''; // Clear inbox
+
+                messages.forEach(msg => {
+                    const card = document.createElement('div');
+                    card.className = "mail-card p-5 bg-zinc-900 rounded-2xl border border-zinc-800 cursor-pointer transition-all flex justify-between items-center";
+                    card.innerHTML = `
+                        <div class="flex-1 min-w-0">
+                            <h4 class="font-bold text-sky-400 truncate">${msg.from.address}</h4>
+                            <p class="text-sm text-gray-300 truncate font-semibold">${msg.subject || '(No Subject)'}</p>
+                            <p class="text-xs text-gray-500 mt-1">${msg.intro || ''}</p>
+                        </div>
+                        <div class="ml-4 text-[10px] text-gray-600 font-mono">${new Date(msg.createdAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</div>
+                    `;
+                    card.onclick = () => openMail(msg.id);
+                    inboxEl.appendChild(card);
+                });
+            } catch (err) {
+                console.error("Fetch error:", err);
+            }
+        }
+
+        // 3. Open Specific Mail
+        async function openMail(id) {
+            try {
+                const res = await fetch(`${API_URL}/messages/${id}`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                const data = await res.json();
+
+                document.getElementById('modal-subject').innerText = data.subject || 'No Subject';
+                document.getElementById('modal-from').innerText = `From: ${data.from.address}`;
+                document.getElementById('modal-body').innerHTML = data.html ? data.html[0] : data.text;
+                
+                // Fix for external links in HTML content
+                const links = document.getElementById('modal-body').getElementsByTagName('a');
+                for (let link of links) link.target = "_blank";
+
+                document.getElementById('mail-modal').classList.remove('hidden');
+            } catch (err) {
+                alert("Mail load nahi ho saka.");
+            }
+        }
+
+        function closeModal() {
+            document.getElementById('mail-modal').classList.add('hidden');
+        }
+
+        // 4. Utility Functions
+        document.getElementById('copy-btn').onclick = () => {
+            const addr = document.getElementById('email-address').value;
+            navigator.clipboard.writeText(addr);
+            const icon = document.getElementById('copy-btn').querySelector('i');
+            icon.classList.replace('fa-copy', 'fa-check');
+            setTimeout(() => icon.classList.replace('fa-check', 'fa-copy'), 2000);
+        };
+
+        document.getElementById('new-email-btn').onclick = createAccount;
+
+        // Auto-refresh every 5 seconds
+        setInterval(fetchMessages, 5000);
+
+        // Initial Load
+        window.onload = createAccount;
+    </script>
+</body>
+</html>
+
