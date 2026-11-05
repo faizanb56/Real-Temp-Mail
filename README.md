@@ -29,7 +29,21 @@ Outfit / sky-glow look, same `REAL TEMP MAIL` header):
 - **6 themes:** Sky Blue, Emerald, Crimson Red, Violet, Amber Gold, Rose Pink.
   Theme choice is saved.
 
-## Use
+## Fixed 2026-11-05 — Refresh fail + Custom domain selection
+- **Refresh fix:** two real bugs were found. (1) On reload, saved messages were
+  loaded into the mailbox object but never into the inbox list, so the inbox
+  looked empty. (2) Mail.tm / Mail.gw tokens expire, and a 401 used to fail
+  Refresh silently forever. Now saved messages are restored on load, and on
+  401 the app re-authenticates with the saved address+password and retries
+  once. Failed refreshes now show the real reason in the status line and keep
+  your saved mails visible instead of wiping them. All API calls now have a
+  12-second timeout.
+- **Custom domain selection:** the Custom button now opens a box with a name
+  field and a domain dropdown. Domains are loaded live from Mail.tm and
+  Mail.gw, plus 1SecMail and GuerrillaMail domains, each labelled with its
+  provider, with a live `name@domain` preview. 1SecMail addresses are used
+  directly; GuerrillaMail does not support custom names, so it makes a random
+  address instead (the box says so).
 Open `index.html` in a browser (or host it on GitHub Pages / your domain).
 Register once, log in, then create a mailbox.
 

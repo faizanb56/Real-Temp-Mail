@@ -232,6 +232,24 @@
         </div>
     </div>
 
+    <!-- Custom address modal: name + domain selection -->
+    <div id="custom-modal" class="fixed inset-0 bg-black/90 backdrop-blur-md hidden z-50 flex items-center justify-center p-4">
+        <div class="bg-zinc-900 w-full max-w-md rounded-3xl overflow-hidden border border-zinc-800 p-6">
+            <div class="flex justify-between items-start mb-4">
+                <h3 class="text-xl font-bold acc-text">Custom Address</h3>
+                <button onclick="$('custom-modal').classList.add('hidden')" class="text-zinc-500 hover:text-white"><i class="fas fa-times text-2xl"></i></button>
+            </div>
+            <label class="text-xs text-zinc-400">Name (local part)</label>
+            <input id="custom-local" type="text" placeholder="e.g. faizan123" oninput="updateCustomPreview()" class="w-full bg-black border border-zinc-800 p-3 rounded-xl mt-1 mb-3 outline-none acc-text font-bold">
+            <label class="text-xs text-zinc-400">Domain — select karo</label>
+            <select id="custom-domain" onchange="updateCustomPreview()" class="w-full bg-black border border-zinc-800 p-3 rounded-xl mt-1 mb-1 outline-none text-white"></select>
+            <p id="custom-domain-note" class="text-[11px] text-zinc-500 mb-3"></p>
+            <p class="text-sm text-zinc-300 mb-4">Preview: <span id="custom-preview" class="acc-text font-bold"></span></p>
+            <p id="custom-err" class="text-red-400 text-sm mb-2 hidden"></p>
+            <button onclick="createCustomAddress()" class="w-full acc-bg text-white font-bold p-3 rounded-xl">Create this address</button>
+        </div>
+    </div>
+
     <script>
         /* ===== Fixed version of the SAME index.html =====
            Old problem: only api.mail.tm, account/token in memory only
@@ -270,9 +288,10 @@
             const d = store.get(dataKey(currentUser), { mailboxes: [], saved: [], current: null });
             mailboxes = d.mailboxes || []; saved = d.saved || []; account = d.current || null;
             $('saved-count').textContent = saved.length;
+            messages = [];
             if (account) {
                 const mb = mailboxes.find(m => m.address === account);
-                if (mb) { token = mb.token || null; provider = mb.provider || 'mail.tm'; }
+                if (mb) { token = mb.token || null; provider = mb.provider || 'mail.tm'; messages = (mb.messages || []).slice(); }
             }
         }
 
@@ -348,38 +367,60 @@
         }
 
         /* ---------- Multi-API mailbox creation (Mail.tm -> Mail.gw -> GuerrillaMail -> 1SecMail) ---------- */
-        async function tmCreate(base, customLocal) {
-            const dRes = await fetch(base + '/domains');
-            if (!dRes.ok) throw new Error('domains fail');
+        /* Fetch with timeout so a hanging API cannot block Refresh forever. */
+        async function fetchJSON(url, opts, ms) {
+            const ctrl = new AbortController(); const t = setTimeout(() => ctrl.abort(), ms || 12000);
+            try { const r = await fetch(url, Object.assign({ signal: ctrl.signal }, opts || {})); return r; }
+            finally { clearTimeout(t); }
+        }
+        async function tmCreate(base, customLocal, customDomain) {
+            const dRes = await fetchJSON(base + '/domains');
+            if (!dRes.ok) throw new Error('domains fail ' + dRes.status);
             const dData = await dRes.json();
-            const domain = (dData['hydra:member'] && dData['hydra:member'][0] && dData['hydra:member'][0].domain) || dData['hydra:member'][0];
+            const members = (dData['hydra:member'] || []).filter(d => d.isActive !== false);
+            if (!members.length) throw new Error('no active domains');
+            let domain = customDomain && members.some(d => d.domain === customDomain) ? customDomain : members[0].domain;
             const local = customLocal || randId(10);
             const address = local + '@' + domain, password = randId(14);
-            const cRes = await fetch(base + '/accounts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ address, password }) });
+            const cRes = await fetchJSON(base + '/accounts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ address, password }) });
             if (!cRes.ok) throw new Error('account fail ' + cRes.status);
-            const tRes = await fetch(base + '/token', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ address, password }) });
+            const tRes = await fetchJSON(base + '/token', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ address, password }) });
             const tData = await tRes.json();
             if (!tData.token) throw new Error('token fail');
             return { address, password, token: tData.token, provider: base.includes('mail.gw') ? 'mail.gw' : 'mail.tm' };
         }
         async function guerrillaCreate() {
-            const res = await fetch('https://api.guerrillamail.com/ajax.php?f=get_email_address&lang=en');
+            const res = await fetchJSON('https://api.guerrillamail.com/ajax.php?f=get_email_address&lang=en');
             const d = await res.json();
             if (!d.email_addr) throw new Error('guerrilla fail');
             return { address: d.email_addr, password: '', token: d.sid_token, provider: 'guerrillamail', sid: d.sid_token };
         }
         async function secmailCreate() {
-            const res = await fetch('https://www.1secmail.com/api/v1/?action=genRandomMailbox&count=1');
+            const res = await fetchJSON('https://www.1secmail.com/api/v1/?action=genRandomMailbox&count=1');
             const d = await res.json();
             if (!d || !d[0]) throw new Error('1secmail fail');
             return { address: d[0], password: '', token: '', provider: '1secmail' };
         }
-        async function createAccount(customLocal) {
+        /* Refresh fix: Mail.tm / Mail.gw tokens expire. On 401, get a fresh
+           token with the saved address+password and retry once, instead of
+           failing Refresh forever. Returns true if re-auth worked. */
+        async function reAuthMailbox() {
+            const mb = mailboxes.find(m => m.address === account);
+            if (!mb || !mb.password || (provider !== 'mail.tm' && provider !== 'mail.gw')) return false;
+            try {
+                const base = provider === 'mail.gw' ? 'https://api.mail.gw' : 'https://api.mail.tm';
+                const r = await fetchJSON(base + '/token', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ address: mb.address, password: mb.password }) });
+                if (!r.ok) return false;
+                const d = await r.json(); if (!d.token) return false;
+                token = d.token; mb.token = d.token; saveData(); return true;
+            } catch (e) { return false; }
+        }
+        async function createAccount(customLocal, customDomain) {
             try {
                 $('email-address').value = 'Creating...';
                 $('status-line').textContent = 'Creating mailbox…';
                 let mb = null, lastErr = null;
-                const tries = [() => tmCreate('https://api.mail.tm', customLocal), () => tmCreate('https://api.mail.gw', customLocal), () => guerrillaCreate(), () => secmailCreate()];
+                const tries = [() => tmCreate('https://api.mail.tm', customLocal, customDomain), () => tmCreate('https://api.mail.gw', customLocal, customDomain), () => guerrillaCreate(), () => secmailCreate()];
                 for (const t of tries) { try { mb = await t(); break; } catch (e) { lastErr = e; console.warn('provider failed, trying next:', e.message); } }
                 if (!mb) throw lastErr || new Error('All providers failed');
                 account = mb.address; token = mb.token || null; provider = mb.provider;
@@ -395,12 +436,55 @@
                 $('status-line').textContent = 'All APIs failed — check internet & try New again';
             }
         }
+        /* ---------- Custom address with domain selection ---------- */
+        const SECMAIL_DOMAINS = ['1secmail.com', '1secmail.org', '1secmail.net', 'wwjmp.com', 'esiix.com', 'xojxe.com', 'yoggm.com'];
+        const GUERRILLA_DOMAINS = ['guerrillamail.com', 'guerrillamailblock.com', 'guerrillamail.net', 'guerrillamail.org', 'sharklasers.com', 'guerrillamail.biz'];
+        let domainOptions = []; // {domain, provider}
+        async function loadDomains() {
+            const sel = $('custom-domain'); sel.innerHTML = '<option>Loading domains…</option>';
+            domainOptions = [];
+            const live = await Promise.all([
+                fetchJSON('https://api.mail.tm/domains').then(r => r.ok ? r.json() : null).catch(() => null),
+                fetchJSON('https://api.mail.gw/domains').then(r => r.ok ? r.json() : null).catch(() => null)
+            ]);
+            const add = (list, prov) => (list && list['hydra:member'] || []).filter(d => d.isActive !== false).forEach(d => domainOptions.push({ domain: d.domain, provider: prov }));
+            add(live[0], 'mail.tm'); add(live[1], 'mail.gw');
+            SECMAIL_DOMAINS.forEach(d => domainOptions.push({ domain: d, provider: '1secmail' }));
+            GUERRILLA_DOMAINS.forEach(d => domainOptions.push({ domain: d, provider: 'guerrillamail' }));
+            if (!domainOptions.length) domainOptions = [{ domain: 'mail.tm', provider: 'mail.tm' }];
+            const seen = new Set();
+            domainOptions = domainOptions.filter(o => !seen.has(o.domain) && seen.add(o.domain));
+            sel.innerHTML = domainOptions.map(o => '<option value="' + esc(o.domain) + '">' + esc(o.domain) + '  (' + esc(o.provider) + ')</option>').join('');
+            updateCustomPreview();
+        }
+        function updateCustomPreview() {
+            const local = ($('custom-local').value.trim() || 'yourname').replace(/[^a-zA-Z0-9._-]/g, '').toLowerCase();
+            const dom = $('custom-domain').value || '';
+            const opt = domainOptions.find(o => o.domain === dom);
+            $('custom-preview').textContent = local + '@' + dom;
+            $('custom-domain-note').textContent = opt ? ('Provider: ' + opt.provider + (opt.provider === 'guerrillamail' ? ' — GuerrillaMail custom name support nahi karta, random address milega.' : opt.provider === '1secmail' ? ' — 1SecMail par ye address direct use hoga, koi account create nahi hota.' : '')) : '';
+        }
         function customAddress() {
-            const local = prompt('Custom name likho (sirf letters/numbers, bina @ ke):', randId(8));
-            if (local === null) return;
-            const clean = local.trim().replace(/[^a-zA-Z0-9._-]/g, '').toLowerCase();
-            if (!clean) { alert('Valid name likho.'); return; }
-            createAccount(clean);
+            $('custom-local').value = randId(8);
+            $('custom-err').classList.add('hidden');
+            $('custom-modal').classList.remove('hidden');
+            loadDomains();
+        }
+        async function createCustomAddress() {
+            const local = $('custom-local').value.trim().replace(/[^a-zA-Z0-9._-]/g, '').toLowerCase();
+            const domain = $('custom-domain').value;
+            if (!local) { const e = $('custom-err'); e.textContent = 'Valid name likho.'; e.classList.remove('hidden'); return; }
+            const opt = domainOptions.find(o => o.domain === domain) || { provider: 'mail.tm' };
+            $('custom-modal').classList.add('hidden');
+            if (opt.provider === '1secmail') {
+                const mb = { address: local + '@' + domain, password: '', token: '', provider: '1secmail', createdAt: Date.now(), messages: [] };
+                account = mb.address; token = null; provider = '1secmail';
+                mailboxes = [mb, ...mailboxes.filter(m => m.address !== mb.address)].slice(0, 20);
+                messages = []; $('email-address').value = account; $('provider-label').textContent = provider;
+                saveData(); renderInbox(); fetchMessages(false); return;
+            }
+            if (opt.provider === 'guerrillamail') { alert('GuerrillaMail custom name nahi deta — random address ban raha hai.'); await createAccount(); return; }
+            await createAccount(local, domain);
         }
         function switchMailbox(address) {
             const mb = mailboxes.find(m => m.address === address); if (!mb) return;
@@ -414,21 +498,29 @@
         function normalize(list) { return list.map(m => ({ id: String(m.id), from: (m.from && m.from.address) || m.from || '', subject: m.subject || '(No Subject)', intro: m.intro || m.text || '', createdAt: m.createdAt || m.date || new Date().toISOString(), body: m.body || null, html: m.html || null })); }
         async function fetchMessages(manual) {
             if (!account) return;
+            $('status-line').textContent = 'Checking for mails…';
             try {
                 let fresh = [];
                 if (provider === 'mail.tm' || provider === 'mail.gw') {
                     const base = provider === 'mail.gw' ? 'https://api.mail.gw' : 'https://api.mail.tm';
-                    const res = await fetch(base + '/messages', { headers: { 'Authorization': 'Bearer ' + token } });
+                    let res = await fetchJSON(base + '/messages', { headers: { 'Authorization': 'Bearer ' + token } });
+                    if ((res.status === 401 || res.status === 403) && await reAuthMailbox()) {
+                        res = await fetchJSON(base + '/messages', { headers: { 'Authorization': 'Bearer ' + token } });
+                    }
+                    if (!res.ok) throw new Error(provider + ' inbox HTTP ' + res.status + (res.status === 401 ? ' (token expired, re-login failed — New mailbox banao)' : ''));
                     const data = await res.json(); fresh = normalize(data['hydra:member'] || []);
                 } else if (provider === 'guerrillamail') {
                     const mb = mailboxes.find(m => m.address === account);
-                    const res = await fetch('https://api.guerrillamail.com/ajax.php?f=check_email&seq=0&sid_token=' + encodeURIComponent(mb.sid || token));
+                    const res = await fetchJSON('https://api.guerrillamail.com/ajax.php?f=check_email&seq=0&sid_token=' + encodeURIComponent(mb.sid || token));
+                    if (!res.ok) throw new Error('guerrillamail HTTP ' + res.status);
                     const data = await res.json();
                     fresh = (data.list || []).map(m => ({ id: String(m.mail_id), from: m.mail_from, subject: m.mail_subject, intro: m.mail_excerpt || '', createdAt: new Date(m.mail_timestamp * 1000).toISOString(), body: null, html: null }));
                 } else if (provider === '1secmail') {
                     const parts = account.split('@');
-                    const res = await fetch('https://www.1secmail.com/api/v1/?action=getMessages&login=' + encodeURIComponent(parts[0]) + '&domain=' + encodeURIComponent(parts[1]));
+                    const res = await fetchJSON('https://www.1secmail.com/api/v1/?action=getMessages&login=' + encodeURIComponent(parts[0]) + '&domain=' + encodeURIComponent(parts[1]));
+                    if (!res.ok) throw new Error('1secmail HTTP ' + res.status);
                     const data = await res.json();
+                    if (data && data.error) throw new Error('1secmail: ' + data.error);
                     fresh = (data || []).map(m => ({ id: String(m.id), from: m.from, subject: m.subject, intro: '', createdAt: m.date, body: null, html: null }));
                 }
                 const seen = new Set(messages.map(m => m.id));
@@ -436,8 +528,14 @@
                 messages = messages.slice(0, 100);
                 const mb = mailboxes.find(m => m.address === account); if (mb) mb.messages = messages;
                 $('last-check').textContent = new Date().toLocaleTimeString();
+                $('status-line').textContent = 'System Online & Checking for Mails';
                 saveData(); renderInbox();
-            } catch (err) { console.error('Fetch error:', err); if (manual) alert('Refresh fail ho gaya. Dobara try karo.'); }
+            } catch (err) {
+                console.error('Fetch error:', err);
+                // Saved mails are NOT wiped on a failed refresh — they stay visible.
+                $('status-line').textContent = 'Refresh failed: ' + err.message;
+                if (manual) alert('Refresh fail ho gaya: ' + err.message);
+            }
         }
         function renderInbox() {
             const list = inboxView === 'saved' ? saved : messages;
@@ -470,15 +568,15 @@
                 if (!body && !html) {
                     if (provider === 'mail.tm' || provider === 'mail.gw') {
                         const base = provider === 'mail.gw' ? 'https://api.mail.gw' : 'https://api.mail.tm';
-                        const res = await fetch(base + '/messages/' + id, { headers: { 'Authorization': 'Bearer ' + token } });
+                        const res = await fetchJSON(base + '/messages/' + id, { headers: { 'Authorization': 'Bearer ' + token } });
                         const data = await res.json(); body = data.text; html = data.html ? data.html[0] : null;
                     } else if (provider === 'guerrillamail') {
                         const mb = mailboxes.find(m => m.address === account);
-                        const res = await fetch('https://api.guerrillamail.com/ajax.php?f=fetch_email&email_id=' + id + '&sid_token=' + encodeURIComponent(mb.sid || token));
+                        const res = await fetchJSON('https://api.guerrillamail.com/ajax.php?f=fetch_email&email_id=' + id + '&sid_token=' + encodeURIComponent(mb.sid || token));
                         const data = await res.json(); body = data.mail_body; html = null;
                     } else if (provider === '1secmail') {
                         const parts = account.split('@');
-                        const res = await fetch('https://www.1secmail.com/api/v1/?action=readMessage&login=' + encodeURIComponent(parts[0]) + '&domain=' + encodeURIComponent(parts[1]) + '&id=' + id);
+                        const res = await fetchJSON('https://www.1secmail.com/api/v1/?action=readMessage&login=' + encodeURIComponent(parts[0]) + '&domain=' + encodeURIComponent(parts[1]) + '&id=' + id);
                         const data = await res.json(); body = data.textBody; html = data.htmlBody || null;
                     }
                     msg.body = body; msg.html = html; saveData();
