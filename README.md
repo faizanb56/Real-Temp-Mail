@@ -9,7 +9,8 @@ on refresh and there was no login, save, OTP copy, custom address, or themes.
 
 What this update fixes (all inside the same `index.html`, same dark `#050505`
 Outfit / sky-glow look, same `REAL TEMP MAIL` header):
-- **Real multi-API with auto-fallback:** Mail.tm → Mail.gw → GuerrillaMail → 1SecMail.
+- **Real multi-API with auto-fallback:** Mail.tm → GuerrillaMail → TempMail Plus
+  (needs Worker URL, see below) → 1SecMail → Mail.gw last (currently down).
   If one provider fails, the next one is tried automatically. Provider name and
   last-check time are shown under the email box.
 - **Session save:** mailboxes, messages and saved mails are saved in the browser
@@ -42,10 +43,34 @@ Outfit / sky-glow look, same `REAL TEMP MAIL` header):
   field and a domain dropdown. Domains are loaded live from Mail.tm and
   Mail.gw, plus 1SecMail and GuerrillaMail domains, each labelled with its
   provider, with a live `name@domain` preview. 1SecMail addresses are used
-  directly; GuerrillaMail does not support custom names, so it makes a random
-  address instead (the box says so).
+  directly; GuerrillaMail supports custom names via `set_email_user`.
 Open `index.html` in a browser (or host it on GitHub Pages / your domain).
 Register once, log in, then create a mailbox.
+
+## Added 2026-11-19 — TempMail Plus (tempmail.plus) via Cloudflare Worker
+- **5th provider — TempMail Plus:** 9 domains (mailto.plus, fexpost.com,
+  fexbox.org, mailbox.in.ua, rover.info, chitthi.in, fextemp.com, any.pink,
+  merepost.com). Real inbox + read-mail, same as the other providers.
+  No account creation needed on tempmail.plus — the address itself works.
+- **Why a Worker:** tempmail.plus sends NO CORS headers (preflight returns
+  405), so a browser page cannot call it directly, and public CORS proxies
+  are unreliable (allorigins returned 522/500 in testing). The included
+  `worker.js` is a ~30-line Cloudflare Worker (free tier) that forwards
+  `tempmail.plus/api/mails` with `Access-Control-Allow-Origin: *`. Deploy it
+  once (2 minutes — steps in the `worker.js` header), paste its URL into
+  `TMP_WORKER_URL` in `index.html`, and TempMail Plus goes live. Until the
+  URL is set, the provider is skipped automatically — the other 4 providers
+  keep working, and its domains stay hidden from the Custom dropdown.
+- **GuerrillaMail (mehmetkahya0/temp-mail repo):** already in the site —
+  real mail + inbox, custom names supported via `set_email_user`. That
+  repo's domain-guard code was NOT copied (it blanks the page on any host
+  other than its own GitHub Pages).
+- **BotolMehedi/Tempmail-Cloudflare (AHCM Mail):** not an API — a full
+  self-hosted system (Cloudflare Pages + Workers + D1 + Email Routing +
+  your own domain). It cannot be "added" to this static file; deploying it
+  is a separate project (own Cloudflare account, own domain with Email
+  Routing, D1 database). If you want your own mail-receiving backend with
+  your own domains, that repo is the way — ask and it can be set up.
 
 ## Honest limit
 This is a static single-file site, so login data and saved mails live in that

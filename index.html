@@ -382,7 +382,7 @@
             else createAccount();
         }
 
-        /* ---------- Multi-API mailbox creation (Mail.tm -> Mail.gw -> GuerrillaMail -> 1SecMail) ---------- */
+        /* ---------- Multi-API mailbox creation (Mail.tm -> GuerrillaMail -> TempMail Plus -> 1SecMail -> Mail.gw) ---------- */
         /* Fetch with timeout so a hanging API cannot block Refresh forever. */
         async function fetchJSON(url, opts, ms) {
             const ctrl = new AbortController(); const t = setTimeout(() => ctrl.abort(), ms || 12000);
@@ -425,6 +425,26 @@
             if (!d || !d[0]) throw new Error('1secmail fail');
             return { address: d[0], password: '', token: '', provider: '1secmail' };
         }
+        /* ---------- TempMail Plus (tempmail.plus) — via apna Cloudflare Worker ----------
+           tempmail.plus browser se direct CORS nahi deta (preflight 405), is liye
+           isko Worker proxy se call karte hain. Worker deploy karo (worker.js),
+           uska URL yahan daalo — phir ye provider live ho jayega. URL khaali ho
+           to provider foran skip ho jata hai, baaki providers chalte rehte hain.
+           Domains: halitsever/temp-mail-plus-api repo se (9 domains). */
+        const TMP_WORKER_URL = ''; // e.g. 'https://tempmail-plus-proxy.faizan.workers.dev'
+        const TMP_DOMAINS = ['mailto.plus', 'fexpost.com', 'fexbox.org', 'mailbox.in.ua', 'rover.info', 'chitthi.in', 'fextemp.com', 'any.pink', 'merepost.com'];
+        function tmpBase() { return TMP_WORKER_URL ? TMP_WORKER_URL.replace(/\/$/, '') : null; }
+        async function tmpCreate(customLocal, customDomain) {
+            const base = tmpBase(); if (!base) throw new Error('tempmail.plus worker not configured');
+            const domain = customDomain && TMP_DOMAINS.includes(customDomain) ? customDomain : TMP_DOMAINS[Math.floor(Math.random() * TMP_DOMAINS.length)];
+            const local = customLocal || randId(8);
+            const address = local + '@' + domain;
+            /* Inbox endpoint check — Worker + tempmail.plus up hon to address ready hai.
+               (tempmail.plus par koi account create nahi hota — address khud kaam karta hai.) */
+            const res = await fetchJSON(base + '/mails?email=' + encodeURIComponent(address));
+            if (!res.ok) throw new Error('tempmail.plus HTTP ' + res.status);
+            return { address, password: '', token: '', provider: 'tempmail.plus' };
+        }
         /* Refresh fix: Mail.tm / Mail.gw tokens expire. On 401, get a fresh
            token with the saved address+password and retry once, instead of
            failing Refresh forever. Returns true if re-auth worked. */
@@ -454,9 +474,10 @@
                 $('email-address').value = 'Creating...';
                 $('status-line').textContent = 'Creating mailbox…';
                 let mb = null, lastErr = null;
-                /* Order: fastest + reliable pehle. Mail.gw aaj kal down hai
+                /* Order: fastest + reliable pehle. TempMail Plus sirf tab try hota hai
+                   jab TMP_WORKER_URL set ho (warna foran skip). Mail.gw aaj kal down hai
                    (12s timeout), is liye sab se aakhir mein sirf 5s timeout ke saath. */
-                const tries = [() => tmCreate('https://api.mail.tm', customLocal, customDomain), () => guerrillaCreate(customLocal), () => secmailCreate(), () => tmCreate('https://api.mail.gw', customLocal, customDomain, 5000)];
+                const tries = [() => tmCreate('https://api.mail.tm', customLocal, customDomain), () => guerrillaCreate(customLocal), () => tmpCreate(customLocal, customDomain), () => secmailCreate(), () => tmCreate('https://api.mail.gw', customLocal, customDomain, 5000)];
                 for (const t of tries) { try { mb = await t(); break; } catch (e) { lastErr = e; console.warn('provider failed, trying next:', e.message); } }
                 if (!mb) throw lastErr || new Error('All providers failed');
                 useMailbox(mb);
@@ -480,6 +501,9 @@
             add(live, 'mail.tm');
             SECMAIL_DOMAINS.forEach(d => domainOptions.push({ domain: d, provider: '1secmail' }));
             GUERRILLA_DOMAINS.forEach(d => domainOptions.push({ domain: d, provider: 'guerrillamail' }));
+            /* TempMail Plus domains sirf tab dikhao jab Worker URL set ho —
+               warna wo address ban to jayega par inbox kabhi read nahi ho sakega. */
+            if (TMP_WORKER_URL) TMP_DOMAINS.forEach(d => domainOptions.push({ domain: d, provider: 'tempmail.plus' }));
             if (!domainOptions.length) domainOptions = [{ domain: 'mail.tm', provider: 'mail.tm' }];
             const seen = new Set();
             domainOptions = domainOptions.filter(o => !seen.has(o.domain) && seen.add(o.domain));
@@ -491,7 +515,7 @@
             const dom = $('custom-domain').value || '';
             const opt = domainOptions.find(o => o.domain === dom);
             $('custom-preview').textContent = local + '@' + dom;
-            $('custom-domain-note').textContent = opt ? ('Provider: ' + opt.provider + (opt.provider === 'guerrillamail' ? ' — GuerrillaMail custom name support karta hai.' : opt.provider === '1secmail' ? ' — 1SecMail par ye address direct use hoga, koi account create nahi hota.' : '')) : '';
+            $('custom-domain-note').textContent = opt ? ('Provider: ' + opt.provider + (opt.provider === 'guerrillamail' ? ' — GuerrillaMail custom name support karta hai.' : opt.provider === '1secmail' ? ' — 1SecMail par ye address direct use hoga, koi account create nahi hota.' : opt.provider === 'tempmail.plus' ? ' — TempMail Plus (Worker proxy se).' : '')) : '';
         }
         function customAddress() {
             $('custom-local').value = randId(8);
@@ -512,6 +536,11 @@
             if (opt.provider === 'guerrillamail') {
                 try { useMailbox(await guerrillaCreate(local)); }
                 catch (e) { alert('GuerrillaMail custom address fail — random address ban raha hai.'); await createAccount(); }
+                return;
+            }
+            if (opt.provider === 'tempmail.plus') {
+                try { useMailbox(await tmpCreate(local, domain)); }
+                catch (e) { alert('TempMail Plus fail — Worker URL check karo, random address ban raha hai.'); await createAccount(); }
                 return;
             }
             await createAccount(local, domain);
@@ -557,6 +586,13 @@
                     const data = await res.json();
                     if (data && data.error) throw new Error('1secmail: ' + data.error);
                     fresh = (data || []).map(m => ({ id: String(m.id), from: m.from, subject: m.subject, intro: '', createdAt: m.date, body: null, html: null }));
+                } else if (provider === 'tempmail.plus') {
+                    const base = tmpBase(); if (!base) throw new Error('tempmail.plus worker not configured');
+                    const res = await fetchJSON(base + '/mails?email=' + encodeURIComponent(account));
+                    if (!res.ok) throw new Error('tempmail.plus HTTP ' + res.status);
+                    const data = await res.json();
+                    if (data && data.result === false) throw new Error('tempmail.plus: inbox failed');
+                    fresh = (data.mail_list || []).map(m => ({ id: String(m.mail_id), from: m.from_mail || m.from_name || '', subject: m.subject || '(No Subject)', intro: '', createdAt: m.time || new Date().toISOString(), body: null, html: null }));
                 }
                 const seen = new Set(messages.map(m => m.id));
                 fresh.forEach(m => { if (!seen.has(m.id)) messages.unshift(m); });
@@ -620,6 +656,10 @@
                         const parts = account.split('@');
                         const res = await fetchJSON('https://www.1secmail.com/api/v1/?action=readMessage&login=' + encodeURIComponent(parts[0]) + '&domain=' + encodeURIComponent(parts[1]) + '&id=' + id);
                         const data = await res.json(); body = data.textBody; html = data.htmlBody || null;
+                    } else if (provider === 'tempmail.plus') {
+                        const base = tmpBase(); if (!base) throw new Error('tempmail.plus worker not configured');
+                        const res = await fetchJSON(base + '/mails/' + id + '?email=' + encodeURIComponent(account));
+                        const data = await res.json(); body = data.text; html = data.html || null;
                     }
                     msg.body = body; msg.html = html; saveData();
                 }
