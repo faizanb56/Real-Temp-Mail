@@ -617,14 +617,30 @@
         }
         function renderInbox() {
             const list = inboxView === 'saved' ? saved : messages;
-            const inboxEl = $('inbox'), statusEl = $('status-msg');
+            const inboxEl = $('inbox');
+            /* BUG FIX (2026-11-19 browser test): #status-msg #inbox ke ANDAR hai.
+               Pehle non-empty render mein inboxEl.innerHTML = '' usko hamesha ke
+               liye delete kar deta tha — uske baad har render "Cannot read
+               properties of null (reading 'classList')" ya appendChild error se
+               crash karta tha: Refresh fail, inbox blank, aur New/Custom par
+               "Error! Try again." (mailbox ban kar save ho jata tha, sirf
+               render crash karta tha). Ab sirf mail-card wale bachon ko
+               hatate hain, status-msg ko kabhi nahi. Agar wo pehle se gayab
+               ho to dobara bana lete hain. */
+            let statusEl = $('status-msg');
+            if (!statusEl) {
+                statusEl = document.createElement('div');
+                statusEl.id = 'status-msg';
+                statusEl.className = 'text-center py-20 text-zinc-600 border-2 border-dashed border-zinc-800 rounded-3xl';
+                inboxEl.appendChild(statusEl);
+            }
+            inboxEl.querySelectorAll('.mail-card').forEach(e => e.remove());
             if (!list.length) {
-                inboxEl.innerHTML = '';
-                inboxEl.appendChild(statusEl); statusEl.classList.remove('hidden');
+                statusEl.classList.remove('hidden');
                 statusEl.innerHTML = '<div class="loader w-8 h-8 border-4 border-zinc-700 rounded-full mx-auto mb-4"></div>' + (inboxView === 'saved' ? 'Koi saved mail nahi hai.' : 'Inbox khali hai. Abhi tak koi mail nahi aaya.');
                 return;
             }
-            statusEl.classList.add('hidden'); inboxEl.innerHTML = '';
+            statusEl.classList.add('hidden');
             list.forEach(msg => {
                 const card = document.createElement('div');
                 card.className = 'mail-card p-5 bg-zinc-900 rounded-2xl border border-zinc-800 cursor-pointer transition-all flex justify-between items-center';
@@ -700,8 +716,8 @@
             const addr = document.getElementById('email-address').value;
             navigator.clipboard.writeText(addr);
             const icon = document.getElementById('copy-btn').querySelector('i');
-            icon.classList.replace('fa-copy', 'fa-check');
-            setTimeout(() => icon.classList.replace('fa-check', 'fa-copy'), 2000);
+            if (icon) { icon.classList.replace('fa-copy', 'fa-check'); setTimeout(() => icon.classList.replace('fa-check', 'fa-copy'), 2000); }
+            $('status-line').textContent = 'Address copied!';
         };
         document.getElementById('new-email-btn').onclick = () => createAccount();
         setInterval(() => { if (currentUser && account && inboxView === 'inbox' && !document.hidden) fetchMessages(false); }, 5000);
