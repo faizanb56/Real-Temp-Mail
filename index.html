@@ -82,7 +82,7 @@
                 <form id="login-form" onsubmit="return doLogin(event)">
                     <div class="input-group">
                         <i class="fas fa-envelope input-icon"></i>
-                        <input type="text" id="login-id" placeholder=" " required autocomplete="username">
+                        <input type="text" id="login-id" placeholder=" " required autocomplete="username" value="faizan">
                         <label for="login-id">Email / Username</label>
                     </div>
                     <div class="input-group">
@@ -251,16 +251,18 @@
     </div>
 
     <script>
-        /* ===== Fixed version of the SAME index.html =====
-           Old problem: only api.mail.tm, account/token in memory only
-           (lost on refresh), fixed password 'password123'.
-           Fix: multi-API fallback, per-user localStorage save,
-           login/register + math captcha + 7-day session, Saved/Recents,
-           Copy OTP, Custom address, 6 themes. Same look kept. */
+        /* ===== Fixed version of the SAME index.html (2026-11-19) =====
+           Refresh fix: overlapping auto-refresh guard, fail par 2s baad
+           ek retry, hidden tab mein auto-refresh band. Mail.gw down hai,
+           is liye create chain mein sab se aakhir mein 5s timeout ke saath.
+           APIs: Mail.tm -> GuerrillaMail (custom name bhi support karta hai)
+           -> 1SecMail -> Mail.gw. Pre-created login 'faizan' sirf
+           password hash ke saath seed hota hai — asal password file mein
+           kahin nahi likha. Same look kept. */
         const SESSION_DAYS = 7;
         const LS_USERS = 'rtm_users', LS_SESSION = 'rtm_session', LS_THEME = 'rtm_theme';
         const dataKey = u => 'rtm_data_' + u;
-        let currentUser = null, account = null, token = null, provider = null;
+        let currentUser = null, account = null, token = null, provider = null, refreshing = false;
         let mailboxes = [], messages = [], saved = [], currentMsg = null, currentOtp = null;
         let inboxView = 'inbox'; // inbox | saved
         let captcha = { login: null, register: null };
@@ -278,6 +280,20 @@
                 const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(p));
                 return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('');
             } catch (e) { let h = 0; for (const c of p) h = (h * 31 + c.charCodeAt(0)) >>> 0; return 'h' + h; }
+        }
+        /* Pre-created login (Faizan) — sirf password ka SHA-256 hash save hai,
+           asal password file mein kahin nahi likha, taake public repo mein
+           password leak na ho. Login wahi password se kaam karega. */
+        const SEED_USERS = [
+            { user: 'faizan', name: 'Faizan', email: 'faizan@gmail.com', passHash: 'fe11d6e8eeb0f66826a022c631478c75a64eb45c0d5377f29761d412f7dfa044' }
+        ];
+        function seedUsers() {
+            const users = store.get(LS_USERS, {});
+            let changed = false;
+            for (const s of SEED_USERS) {
+                if (!users[s.user]) { users[s.user] = { name: s.name, email: s.email, user: s.user, passHash: s.passHash, createdAt: Date.now() }; changed = true; }
+            }
+            if (changed) store.set(LS_USERS, users);
         }
         function saveData() {
             if (!currentUser) return;
@@ -373,8 +389,8 @@
             try { const r = await fetch(url, Object.assign({ signal: ctrl.signal }, opts || {})); return r; }
             finally { clearTimeout(t); }
         }
-        async function tmCreate(base, customLocal, customDomain) {
-            const dRes = await fetchJSON(base + '/domains');
+        async function tmCreate(base, customLocal, customDomain, ms) {
+            const dRes = await fetchJSON(base + '/domains', null, ms || 12000);
             if (!dRes.ok) throw new Error('domains fail ' + dRes.status);
             const dData = await dRes.json();
             const members = (dData['hydra:member'] || []).filter(d => d.isActive !== false);
@@ -389,11 +405,19 @@
             if (!tData.token) throw new Error('token fail');
             return { address, password, token: tData.token, provider: base.includes('mail.gw') ? 'mail.gw' : 'mail.tm' };
         }
-        async function guerrillaCreate() {
+        async function guerrillaCreate(customLocal) {
             const res = await fetchJSON('https://api.guerrillamail.com/ajax.php?f=get_email_address&lang=en');
             const d = await res.json();
             if (!d.email_addr) throw new Error('guerrilla fail');
-            return { address: d.email_addr, password: '', token: d.sid_token, provider: 'guerrillamail', sid: d.sid_token };
+            let address = d.email_addr; const sid = d.sid_token;
+            if (customLocal) {
+                try {
+                    const sRes = await fetchJSON('https://api.guerrillamail.com/ajax.php?f=set_email_user&email_user=' + encodeURIComponent(customLocal) + '&sid_token=' + encodeURIComponent(sid) + '&lang=en');
+                    const sData = await sRes.json();
+                    if (sData.email_addr) address = sData.email_addr;
+                } catch (e) { /* custom name na mila to random address hi use hoga */ }
+            }
+            return { address, password: '', token: sid, provider: 'guerrillamail', sid };
         }
         async function secmailCreate() {
             const res = await fetchJSON('https://www.1secmail.com/api/v1/?action=genRandomMailbox&count=1');
@@ -415,21 +439,27 @@
                 token = d.token; mb.token = d.token; saveData(); return true;
             } catch (e) { return false; }
         }
+        /* Ek mailbox ko current banao: UI update + save + inbox render + refresh. */
+        function useMailbox(mb) {
+            account = mb.address; token = mb.token || null; provider = mb.provider;
+            mb.createdAt = mb.createdAt || Date.now(); mb.messages = mb.messages || [];
+            mailboxes = [mb, ...mailboxes.filter(m => m.address !== mb.address)].slice(0, 20);
+            messages = mb.messages.slice(); inboxView = 'inbox'; $('inbox-title').textContent = 'Inbox';
+            $('email-address').value = account; $('provider-label').textContent = provider;
+            $('status-line').textContent = 'System Online & Checking for Mails';
+            saveData(); renderInbox(); fetchMessages(false);
+        }
         async function createAccount(customLocal, customDomain) {
             try {
                 $('email-address').value = 'Creating...';
                 $('status-line').textContent = 'Creating mailbox…';
                 let mb = null, lastErr = null;
-                const tries = [() => tmCreate('https://api.mail.tm', customLocal, customDomain), () => tmCreate('https://api.mail.gw', customLocal, customDomain), () => guerrillaCreate(), () => secmailCreate()];
+                /* Order: fastest + reliable pehle. Mail.gw aaj kal down hai
+                   (12s timeout), is liye sab se aakhir mein sirf 5s timeout ke saath. */
+                const tries = [() => tmCreate('https://api.mail.tm', customLocal, customDomain), () => guerrillaCreate(customLocal), () => secmailCreate(), () => tmCreate('https://api.mail.gw', customLocal, customDomain, 5000)];
                 for (const t of tries) { try { mb = await t(); break; } catch (e) { lastErr = e; console.warn('provider failed, trying next:', e.message); } }
                 if (!mb) throw lastErr || new Error('All providers failed');
-                account = mb.address; token = mb.token || null; provider = mb.provider;
-                mb.createdAt = Date.now(); mb.messages = [];
-                mailboxes = [mb, ...mailboxes.filter(m => m.address !== mb.address)].slice(0, 20);
-                messages = []; inboxView = 'inbox'; $('inbox-title').textContent = 'Inbox';
-                $('email-address').value = account; $('provider-label').textContent = provider;
-                $('status-line').textContent = 'System Online & Checking for Mails';
-                saveData(); renderInbox(); fetchMessages(false);
+                useMailbox(mb);
             } catch (err) {
                 console.error(err);
                 $('email-address').value = 'Error! Try again.';
@@ -443,12 +473,11 @@
         async function loadDomains() {
             const sel = $('custom-domain'); sel.innerHTML = '<option>Loading domains…</option>';
             domainOptions = [];
-            const live = await Promise.all([
-                fetchJSON('https://api.mail.tm/domains').then(r => r.ok ? r.json() : null).catch(() => null),
-                fetchJSON('https://api.mail.gw/domains').then(r => r.ok ? r.json() : null).catch(() => null)
-            ]);
+            /* Mail.gw yahan se hata diya: wo down hai aur uske domains
+               waise bhi Mail.tm wale hi hain — modal ko 12s latkana bekar hai. */
+            const live = await fetchJSON('https://api.mail.tm/domains', null, 6000).then(r => r.ok ? r.json() : null).catch(() => null);
             const add = (list, prov) => (list && list['hydra:member'] || []).filter(d => d.isActive !== false).forEach(d => domainOptions.push({ domain: d.domain, provider: prov }));
-            add(live[0], 'mail.tm'); add(live[1], 'mail.gw');
+            add(live, 'mail.tm');
             SECMAIL_DOMAINS.forEach(d => domainOptions.push({ domain: d, provider: '1secmail' }));
             GUERRILLA_DOMAINS.forEach(d => domainOptions.push({ domain: d, provider: 'guerrillamail' }));
             if (!domainOptions.length) domainOptions = [{ domain: 'mail.tm', provider: 'mail.tm' }];
@@ -462,7 +491,7 @@
             const dom = $('custom-domain').value || '';
             const opt = domainOptions.find(o => o.domain === dom);
             $('custom-preview').textContent = local + '@' + dom;
-            $('custom-domain-note').textContent = opt ? ('Provider: ' + opt.provider + (opt.provider === 'guerrillamail' ? ' — GuerrillaMail custom name support nahi karta, random address milega.' : opt.provider === '1secmail' ? ' — 1SecMail par ye address direct use hoga, koi account create nahi hota.' : '')) : '';
+            $('custom-domain-note').textContent = opt ? ('Provider: ' + opt.provider + (opt.provider === 'guerrillamail' ? ' — GuerrillaMail custom name support karta hai.' : opt.provider === '1secmail' ? ' — 1SecMail par ye address direct use hoga, koi account create nahi hota.' : '')) : '';
         }
         function customAddress() {
             $('custom-local').value = randId(8);
@@ -477,13 +506,14 @@
             const opt = domainOptions.find(o => o.domain === domain) || { provider: 'mail.tm' };
             $('custom-modal').classList.add('hidden');
             if (opt.provider === '1secmail') {
-                const mb = { address: local + '@' + domain, password: '', token: '', provider: '1secmail', createdAt: Date.now(), messages: [] };
-                account = mb.address; token = null; provider = '1secmail';
-                mailboxes = [mb, ...mailboxes.filter(m => m.address !== mb.address)].slice(0, 20);
-                messages = []; $('email-address').value = account; $('provider-label').textContent = provider;
-                saveData(); renderInbox(); fetchMessages(false); return;
+                useMailbox({ address: local + '@' + domain, password: '', token: '', provider: '1secmail', createdAt: Date.now(), messages: [] });
+                return;
             }
-            if (opt.provider === 'guerrillamail') { alert('GuerrillaMail custom name nahi deta — random address ban raha hai.'); await createAccount(); return; }
+            if (opt.provider === 'guerrillamail') {
+                try { useMailbox(await guerrillaCreate(local)); }
+                catch (e) { alert('GuerrillaMail custom address fail — random address ban raha hai.'); await createAccount(); }
+                return;
+            }
             await createAccount(local, domain);
         }
         function switchMailbox(address) {
@@ -496,8 +526,13 @@
 
         /* ---------- Fetch messages (per provider) + save to localStorage ---------- */
         function normalize(list) { return list.map(m => ({ id: String(m.id), from: (m.from && m.from.address) || m.from || '', subject: m.subject || '(No Subject)', intro: m.intro || m.text || '', createdAt: m.createdAt || m.date || new Date().toISOString(), body: m.body || null, html: m.html || null })); }
-        async function fetchMessages(manual) {
+        /* Refresh fix: (1) overlapping refresh nahi — 5s auto-refresh agar
+           pichla fetch abhi chal raha ho to skip; (2) fail ho to 2s baad
+           ek dafa retry; (3) phir bhi fail ho to saved mails mehfooz rehte hain. */
+        async function fetchMessages(manual, _retried) {
             if (!account) return;
+            if (refreshing) return;
+            refreshing = true;
             $('status-line').textContent = 'Checking for mails…';
             try {
                 let fresh = [];
@@ -532,9 +567,16 @@
                 saveData(); renderInbox();
             } catch (err) {
                 console.error('Fetch error:', err);
+                if (!_retried) {
+                    await new Promise(r => setTimeout(r, 2000));
+                    refreshing = false;
+                    return fetchMessages(manual, true);
+                }
                 // Saved mails are NOT wiped on a failed refresh — they stay visible.
                 $('status-line').textContent = 'Refresh failed: ' + err.message;
                 if (manual) alert('Refresh fail ho gaya: ' + err.message);
+            } finally {
+                refreshing = false;
             }
         }
         function renderInbox() {
@@ -622,8 +664,9 @@
             setTimeout(() => icon.classList.replace('fa-check', 'fa-copy'), 2000);
         };
         document.getElementById('new-email-btn').onclick = () => createAccount();
-        setInterval(() => { if (currentUser && account && inboxView === 'inbox') fetchMessages(false); }, 5000);
+        setInterval(() => { if (currentUser && account && inboxView === 'inbox' && !document.hidden) fetchMessages(false); }, 5000);
         window.onload = () => {
+            seedUsers();
             const theme = store.get(LS_THEME, 'sky'); setTheme(theme);
             newCaptcha('login'); newCaptcha('register');
             const sess = store.get(LS_SESSION, null);
