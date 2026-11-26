@@ -139,6 +139,23 @@ Register once, log in, then create a mailbox.
   ke liye asal address chahiye hota hai, is liye source se poori tarah
   hatana mumkin nahi.
 
+## Added 2026-11-26 (same day) — Saved max 10 + disclaimer ticker
+- **Saved mails max 10:** Saved Mails mein sirf 10 mails save ho sakti
+  hain (counter "Saved (n/10)" dikhta hai). 11th save karne par alert
+  aata hai — pehle koi saved mail delete karo. Saved mails tab tak rehti
+  hain jab tak user khud delete na kare (localStorage mein save hoti hain,
+  per logged-in user; delete ✕ button Saved view mein hai, aur modal mein
+  Unsave bhi hai). Limit dono save raaston par lagti hai (inbox card ka
+  Save button aur mail modal ka Save mail button).
+- **Disclaimer ticker:** "Developed By ~~ Faizan Bashir 056" line ke neeche
+  ek red scrolling line (marquee) chalti hai — 👑 کنگ فیضان بشیر (Noto
+  Nastaliq Urdu font) + "King Faizan Bashir", phir disclaimer 1 bar
+  English mein aur 1 bar Urdu mein: "Disclaimer: Real Temp Mail helps
+  users use temp mail on this website/app for security. So use it only for
+  good purposes." / "ڈسکلیمر: ریئل ٹیمپ میل صارفین کو اس ویب سائٹ/ایپ پر
+  سیکیورٹی کے لیے ٹیمپ میل استعمال کرنے میں مدد کرتا ہے۔ اس لیے اسے صرف
+  اچھے مقاصد کے لیے استعمال کریں۔" Hover karne par ticker ruk jata hai.
+
 ## Honest limit
 This is a static single-file site, so login data and saved mails live in that
 browser only. The same username/password on another mobile will show the saved
