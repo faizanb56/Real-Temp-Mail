@@ -147,8 +147,9 @@ Register once, log in, then create a mailbox.
   per logged-in user; delete ✕ button Saved view mein hai, aur modal mein
   Unsave bhi hai). Limit dono save raaston par lagti hai (inbox card ka
   Save button aur mail modal ka Save mail button).
-- **Disclaimer ticker:** "Developed By ~~ Faizan Bashir 056" line ke neeche
-  ek red scrolling line (marquee) chalti hai — 👑 کنگ فیضان بشیر (Noto
+- **Disclaimer ticker:** site ka slogan "Temp mail. Zero spam. Full privacy."
+  (header mein title ke neeche, "Developed By ~~ Faizan Bashir 056" line ki
+  jagah) aur uske neeche ek red scrolling line (marquee) chalti hai — 👑 کنگ فیضان بشیر (Noto
   Nastaliq Urdu font) + "King Faizan Bashir", phir disclaimer 1 bar
   English mein aur 1 bar Urdu mein: "Disclaimer: Real Temp Mail helps
   users use temp mail on this website/app for security. So use it only for
