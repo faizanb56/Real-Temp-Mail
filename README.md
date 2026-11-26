@@ -150,12 +150,9 @@ Register once, log in, then create a mailbox.
 - **Disclaimer ticker:** site ka slogan "Temp mail. Zero spam. Full privacy."
   (header mein title ke neeche, "Developed By ~~ Faizan Bashir 056" line ki
   jagah) aur uske neeche ek red scrolling line (marquee) chalti hai — 👑 کنگ فیضان بشیر (Noto
-  Nastaliq Urdu font) + "King Faizan Bashir", phir disclaimer 1 bar
-  English mein aur 1 bar Urdu mein: "Disclaimer: Real Temp Mail helps
-  users use temp mail on this website/app for security. So use it only for
-  good purposes." / "ڈسکلیمر: ریئل ٹیمپ میل صارفین کو اس ویب سائٹ/ایپ پر
-  سیکیورٹی کے لیے ٹیمپ میل استعمال کرنے میں مدد کرتا ہے۔ اس لیے اسے صرف
-  اچھے مقاصد کے لیے استعمال کریں۔" Hover karne par ticker ruk jata hai.
+  Nastaliq Urdu font) + "King Faizan Bashir" + "Developer Mr Faizan Bashir" +
+  ڈیویلپر مسٹر فیضان بشیر (Urdu mein bhi). Disclaimer hata diya gaya hai.
+  Hover karne par ticker ruk jata hai.
 
 ## Honest limit
 This is a static single-file site, so login data and saved mails live in that
