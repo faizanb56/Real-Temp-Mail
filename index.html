@@ -382,7 +382,9 @@
             else createAccount();
         }
 
-        /* ---------- Multi-API mailbox creation (Mail.tm -> GuerrillaMail -> TempMail Plus -> 1SecMail -> Mail.gw) ---------- */
+        /* ---------- Multi-API mailbox creation (Mail.tm -> GuerrillaMail -> TempMail Plus -> 1SecMail -> Mail.gw) ----------
+           2026-11-26: TEMPTF_ONLY = true — sirf temp.tf chalega, baaki
+           providers temporarily band hain (code waisa ka waisa hai). */
         /* Fetch with timeout so a hanging API cannot block Refresh forever. */
         async function fetchJSON(url, opts, ms) {
             const ctrl = new AbortController(); const t = setTimeout(() => ctrl.abort(), ms || 12000);
@@ -433,6 +435,12 @@
            Domains: halitsever/temp-mail-plus-api repo se (9 domains). */
         const TMP_WORKER_URL = ''; // e.g. 'https://tempmail-plus-proxy.faizan.workers.dev'
         const TMP_DOMAINS = ['mailto.plus', 'fexpost.com', 'fexbox.org', 'mailbox.in.ua', 'rover.info', 'chitthi.in', 'fextemp.com', 'any.pink', 'merepost.com'];
+        /* TEMPTF_ONLY (2026-11-26, Faizan ki instruction): sirf temp.tf chalega.
+           Baaki providers (Mail.tm, GuerrillaMail, 1SecMail, Mail.gw, TempMail Plus)
+           TEMPORARILY band hain — unka code waisa ka waisa hai, sirf chain aur
+           Custom dropdown se hata diye gaye hain. Wapas on karne ke liye sirf
+           false karo. Note: Worker URL set hone tak temp.tf bhi skip/fail hoga. */
+        const TEMPTF_ONLY = true;
         function tmpBase() { return TMP_WORKER_URL ? TMP_WORKER_URL.replace(/\/$/, '') : null; }
         async function tmpCreate(customLocal, customDomain) {
             const base = tmpBase(); if (!base) throw new Error('tempmail.plus worker not configured');
@@ -445,6 +453,23 @@
             if (!res.ok) throw new Error('tempmail.plus HTTP ' + res.status);
             return { address, password: '', token: '', provider: 'tempmail.plus' };
         }
+        /* ---------- temp.tf — via apna Cloudflare Worker ----------
+           temp.tf browser se direct CORS nahi deta (preflight 204 par bhi
+           koi Access-Control-Allow-Origin header nahi), is liye isko bhi
+           Worker proxy se call karte hain: GET /temptf/account (random
+           address) + POST /temptf/check (inbox, full body ke saath).
+           Address @temp.tf wali NAHI hoti — Gmail/Outlook/Hotmail
+           plus-alias (jaise name+tag@gmail.com) ya @high.edu.pl hoti hai;
+           OTP usi par aata hai. Custom name support nahi karta. */
+        async function tfCreate() {
+            const base = tmpBase(); if (!base) throw new Error('temp.tf worker not configured');
+            const res = await fetchJSON(base + '/temptf/account?dot=1&plus=1');
+            if (!res.ok) throw new Error('temp.tf HTTP ' + res.status);
+            const d = await res.json();
+            if (!d.email) throw new Error('temp.tf: no email');
+            return { address: d.email, password: '', token: '', provider: 'temp.tf' };
+        }
+        function stripHtml(h) { return String(h || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim(); }
         /* Refresh fix: Mail.tm / Mail.gw tokens expire. On 401, get a fresh
            token with the saved address+password and retry once, instead of
            failing Refresh forever. Returns true if re-auth worked. */
@@ -474,10 +499,12 @@
                 $('email-address').value = 'Creating...';
                 $('status-line').textContent = 'Creating mailbox…';
                 let mb = null, lastErr = null;
-                /* Order: fastest + reliable pehle. TempMail Plus sirf tab try hota hai
-                   jab TMP_WORKER_URL set ho (warna foran skip). Mail.gw aaj kal down hai
-                   (12s timeout), is liye sab se aakhir mein sirf 5s timeout ke saath. */
-                const tries = [() => tmCreate('https://api.mail.tm', customLocal, customDomain), () => guerrillaCreate(customLocal), () => tmpCreate(customLocal, customDomain), () => secmailCreate(), () => tmCreate('https://api.mail.gw', customLocal, customDomain, 5000)];
+                /* Order: fastest + reliable pehle. TEMPTF_ONLY ho to sirf temp.tf
+                   try hota hai (baaki providers temporarily band). TempMail Plus
+                   sirf tab try hota hai jab TMP_WORKER_URL set ho (warna foran
+                   skip). Mail.gw aaj kal down hai (12s timeout), is liye sab se
+                   aakhir mein sirf 5s timeout ke saath. */
+                const tries = TEMPTF_ONLY ? [() => tfCreate()] : [() => tmCreate('https://api.mail.tm', customLocal, customDomain), () => guerrillaCreate(customLocal), () => tmpCreate(customLocal, customDomain), () => secmailCreate(), () => tmCreate('https://api.mail.gw', customLocal, customDomain, 5000)];
                 for (const t of tries) { try { mb = await t(); break; } catch (e) { lastErr = e; console.warn('provider failed, trying next:', e.message); } }
                 if (!mb) throw lastErr || new Error('All providers failed');
                 useMailbox(mb);
@@ -494,6 +521,16 @@
         async function loadDomains() {
             const sel = $('custom-domain'); sel.innerHTML = '<option>Loading domains…</option>';
             domainOptions = [];
+            /* TEMPTF_ONLY: sirf temp.tf — baaki providers ke domains
+               temporarily hidden hain. temp.tf ka koi fixed domain nahi
+               hota (random Gmail alias / @high.edu.pl), is liye sirf
+               ek 'temp.tf' option dikhate hain. */
+            if (TEMPTF_ONLY) {
+                domainOptions = [{ domain: 'temp.tf', provider: 'temp.tf' }];
+                sel.innerHTML = domainOptions.map(o => '<option value="' + esc(o.domain) + '">' + esc(o.domain) + '  (' + esc(o.provider) + ')</option>').join('');
+                updateCustomPreview();
+                return;
+            }
             /* Mail.gw yahan se hata diya: wo down hai aur uske domains
                waise bhi Mail.tm wale hi hain — modal ko 12s latkana bekar hai. */
             const live = await fetchJSON('https://api.mail.tm/domains', null, 6000).then(r => r.ok ? r.json() : null).catch(() => null);
@@ -515,7 +552,7 @@
             const dom = $('custom-domain').value || '';
             const opt = domainOptions.find(o => o.domain === dom);
             $('custom-preview').textContent = local + '@' + dom;
-            $('custom-domain-note').textContent = opt ? ('Provider: ' + opt.provider + (opt.provider === 'guerrillamail' ? ' — GuerrillaMail custom name support karta hai.' : opt.provider === '1secmail' ? ' — 1SecMail par ye address direct use hoga, koi account create nahi hota.' : opt.provider === 'tempmail.plus' ? ' — TempMail Plus (Worker proxy se).' : '')) : '';
+            $('custom-domain-note').textContent = opt ? ('Provider: ' + opt.provider + (opt.provider === 'guerrillamail' ? ' — GuerrillaMail custom name support karta hai.' : opt.provider === '1secmail' ? ' — 1SecMail par ye address direct use hoga, koi account create nahi hota.' : opt.provider === 'tempmail.plus' ? ' — TempMail Plus (Worker proxy se).' : opt.provider === 'temp.tf' ? ' — temp.tf (Worker proxy se) — random Gmail alias address banega, custom name nahi chalega.' : '')) : '';
         }
         function customAddress() {
             $('custom-local').value = randId(8);
@@ -541,6 +578,11 @@
             if (opt.provider === 'tempmail.plus') {
                 try { useMailbox(await tmpCreate(local, domain)); }
                 catch (e) { alert('TempMail Plus fail — Worker URL check karo, random address ban raha hai.'); await createAccount(); }
+                return;
+            }
+            if (opt.provider === 'temp.tf') {
+                try { useMailbox(await tfCreate()); }
+                catch (e) { alert('temp.tf fail — Worker URL check karo.'); }
                 return;
             }
             await createAccount(local, domain);
@@ -593,6 +635,18 @@
                     const data = await res.json();
                     if (data && data.result === false) throw new Error('tempmail.plus: inbox failed');
                     fresh = (data.mail_list || []).map(m => ({ id: String(m.mail_id), from: m.from_mail || m.from_name || '', subject: m.subject || '(No Subject)', intro: '', createdAt: m.time || new Date().toISOString(), body: null, html: null }));
+                } else if (provider === 'temp.tf') {
+                    const base = tmpBase(); if (!base) throw new Error('temp.tf worker not configured');
+                    const res = await fetchJSON(base + '/temptf/check', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: account }) });
+                    if (!res.ok) throw new Error('temp.tf HTTP ' + res.status);
+                    const data = await res.json();
+                    /* /check full body de deta hai — body/html yahin set kar
+                       dete hain, openMail ko dobara fetch nahi karna parta. */
+                    fresh = (data.data || []).map(m => {
+                        const isHtml = (m.bodyContentType || 'text').toLowerCase() === 'html';
+                        const text = isHtml ? stripHtml(m.body || '') : (m.body || '');
+                        return { id: String(m.id), from: m.from || '', subject: m.subject || '(No Subject)', intro: text.slice(0, 120), createdAt: m.date || new Date().toISOString(), body: isHtml ? null : (m.body || ''), html: isHtml ? (m.body || null) : null };
+                    });
                 }
                 const seen = new Set(messages.map(m => m.id));
                 fresh.forEach(m => { if (!seen.has(m.id)) messages.unshift(m); });
@@ -676,6 +730,11 @@
                         const base = tmpBase(); if (!base) throw new Error('tempmail.plus worker not configured');
                         const res = await fetchJSON(base + '/mails/' + id + '?email=' + encodeURIComponent(account));
                         const data = await res.json(); body = data.text; html = data.html || null;
+                    } else if (provider === 'temp.tf') {
+                        const base = tmpBase(); if (!base) throw new Error('temp.tf worker not configured');
+                        const res = await fetchJSON(base + '/temptf/check', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: account }) });
+                        const data = await res.json(); const m = (data.data || []).find(x => String(x.id) === String(id));
+                        if (m) { const isHtml = (m.bodyContentType || 'text').toLowerCase() === 'html'; body = isHtml ? null : (m.body || ''); html = isHtml ? (m.body || null) : null; }
                     }
                     msg.body = body; msg.html = html; saveData();
                 }

@@ -1,17 +1,17 @@
-/* TempMail Plus proxy — Cloudflare Worker (free tier)
+/* TempMail proxy — Cloudflare Worker (free tier)
    =====================================================
    WHY THIS EXISTS:
-   tempmail.plus ki API asli hai aur kaam karti hai, lekin wo browser ko
-   CORS headers nahi deti (OPTIONS preflight par 405) — is liye koi bhi
-   static website (GitHub Pages / tumhara domain) usko direct call nahi
-   kar sakta. Public CORS proxies bhi unreliable hain (allorigins ne
-   test mein 522 / 500 diye). Ye chhota sa Worker beech mein baith kar
-   tempmail.plus ko server-side call karta hai aur CORS * ke saath
-   jawab wapas deta hai — phir tumhari site se har call chal jati hai.
+   temp.tf aur tempmail.plus ki APIs asli hain aur kaam karti hain,
+   lekin wo browser ko CORS headers nahi deti — is liye koi bhi static
+   website (GitHub Pages / tumhara domain) unko direct call nahi kar
+   sakta. Public CORS proxies bhi unreliable hain (allorigins ne test
+   mein 522 / 500 diye). Ye chhota sa Worker beech mein baith kar dono
+   APIs ko server-side call karta hai aur CORS * ke saath jawab wapas
+   deta hai — phir tumhari site se har call chal jati hai.
 
    Ye Worker koi mail STORE nahi karta, koi password/key nahi mangta,
-   sirf tempmail.plus ko forward karta hai. Cloudflare free tier par
-   chalta hai (100,000 requests/day free).
+   sirf APIs ko forward karta hai. Cloudflare free tier par chalta hai
+   (100,000 requests/day free).
 
    DEPLOY — 2 minute:
    1. https://dash.cloudflare.com kholo — free account banao agar nahi hai.
@@ -20,19 +20,25 @@
    4. Worker ka URL copy karo, jo kuch is tarah hoga:
         https://tempmail-plus-proxy.TUMHARA-NAME.workers.dev
    5. index.html mein TMP_WORKER_URL mein wo URL daalo, GitHub push karo.
-      Bas — TempMail Plus provider live ho jayega (inbox + mail read +
-      custom domains). URL khaali ho to provider khud skip ho jata hai.
+      Bas — temp.tf (aur TempMail Plus) live ho jayega. URL khaali ho to
+      provider khud skip ho jata hai.
 
    ENDPOINTS (site yehi call karti hai):
+   temp.tf (site: provider 'temp.tf'):
+   GET  /temptf/account?dot=1&plus=1       -> {"email": "name+tag@gmail.com"}
+   POST /temptf/check  {"email": "..."}    -> {"data": [mails], "totalReceived": N}
+   GET  /temptf/attachment?email=...&messageId=...&attachmentId=...
+   TempMail Plus (site: provider 'tempmail.plus'):
    GET  /mails?email=a@fexpost.com        -> inbox list
    GET  /mails/<id>?email=a@fexpost.com   -> ek mail ka poora text/html
    DELETE /mails/<id>?email=...           -> mail delete (site use nahi karti) */
 
-const UPSTREAM = 'https://tempmail.plus/api';
+const PLUS_UPSTREAM = 'https://tempmail.plus/api';
+const TEMPTF_UPSTREAM = 'https://temp.tf/api';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, DELETE, OPTIONS',
+  'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type, X-Requested-With',
 };
 
@@ -42,16 +48,25 @@ export default {
       return new Response(null, { headers: CORS });
     }
     const url = new URL(request.url);
-    if (!url.pathname.startsWith('/mails')) {
+    let upstream, path;
+    if (url.pathname.startsWith('/mails')) {
+      upstream = PLUS_UPSTREAM;
+      path = url.pathname; // /mails, /mails/<id>
+    } else if (url.pathname.startsWith('/temptf/')) {
+      upstream = TEMPTF_UPSTREAM;
+      path = url.pathname.replace(/^\/temptf/, ''); // /temptf/account -> /account
+    } else {
       return new Response(JSON.stringify({ error: 'not found' }), {
         status: 404,
         headers: { 'Content-Type': 'application/json', ...CORS },
       });
     }
-    const res = await fetch(UPSTREAM + url.pathname + url.search, {
-      method: request.method,
-      headers: { Accept: 'application/json' },
-    });
+    const init = { method: request.method, headers: { Accept: 'application/json' } };
+    if (request.method === 'POST') {
+      init.headers['Content-Type'] = 'application/json';
+      init.body = await request.text();
+    }
+    const res = await fetch(upstream + path + url.search, init);
     const body = await res.text();
     return new Response(body, {
       status: res.status,

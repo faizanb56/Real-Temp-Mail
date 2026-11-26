@@ -72,6 +72,25 @@ Register once, log in, then create a mailbox.
   Routing, D1 database). If you want your own mail-receiving backend with
   your own domains, that repo is the way — ask and it can be set up.
 
+## Added 2026-11-26 — temp.tf (6th provider, ONLY active one for now)
+- **temp.tf — ONLY provider (TEMPTF_ONLY = true in `index.html`):** all other
+  providers (Mail.tm, GuerrillaMail, 1SecMail, Mail.gw, TempMail Plus) are
+  TEMPORARILY disabled — their code is untouched, only the creation chain
+  and the Custom domain dropdown skip them. Set `TEMPTF_ONLY = false` to
+  bring them all back.
+- **How temp.tf works:** `GET /account` gives a random address, `POST /check`
+  returns the inbox with full body. Addresses are NOT `@temp.tf` — they are
+  Gmail/Outlook/Hotmail plus/dot aliases (e.g. `name+tag@gmail.com`) or random
+  `@high.edu.pl` addresses. OTPs arrive on that alias. Custom names are not
+  supported — New and Custom both create a random address. API validated live
+  via curl (account + empty-inbox check both 200; service reports 8M+ mails).
+- **Same Worker, extended:** `worker.js` now also forwards `/temptf/*` to
+  `https://temp.tf/api/*` (temp.tf sends NO CORS headers either — preflight
+  204 without `Access-Control-Allow-Origin`). Deploy the Worker and paste its
+  URL into `TMP_WORKER_URL` — until then temp.tf is skipped and New fails,
+  because it is the only provider. The same Worker URL also switches
+  TempMail Plus back on if `TEMPTF_ONLY` is later turned off.
+
 ## Honest limit
 This is a static single-file site, so login data and saved mails live in that
 browser only. The same username/password on another mobile will show the saved
