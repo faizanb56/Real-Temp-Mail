@@ -1,8 +1,7 @@
 /* TempMail proxy — Cloudflare Worker (free tier) — OPTIONAL BACKUP
    =====================================================
    2026-11-26: Worker ab zaroori NAHI raha. Site Vercel par hosted hai
-   aur repo mein vercel.json /temptf/* ko https://temp.tf/api/* par
-   proxy karta hai (same-origin, CORS bypass) — kuch deploy nahi karna
+   aur repo mein vercel.json /api/* ko https://temp.tf/api/* par proxy karta hai (same-origin, CORS bypass) — kuch deploy nahi karna
    parta. Ye Worker sirf backup hai agar site kabhi Vercel ke bajaye
    kahin aur host ho (jahan vercel.json kaam na kare): tab isko deploy
    karke uska URL index.html mein TMP_WORKER_URL mein daalo.
@@ -31,9 +30,9 @@
 
    ENDPOINTS (site yehi call karti hai):
    temp.tf (site: provider 'temp.tf'):
-   GET  /temptf/account?dot=1&plus=1       -> {"email": "name+tag@gmail.com"}
-   POST /temptf/check  {"email": "..."}    -> {"data": [mails], "totalReceived": N}
-   GET  /temptf/attachment?email=...&messageId=...&attachmentId=...
+   GET  /api/account?dot=1&plus=1       -> {"email": "name+tag@gmail.com"}
+   POST /api/check  {"email": "..."}    -> {"data": [mails], "totalReceived": N}
+   GET  /api/attachment?email=...&messageId=...&attachmentId=...
    TempMail Plus (site: provider 'tempmail.plus'):
    GET  /mails?email=a@fexpost.com        -> inbox list
    GET  /mails/<id>?email=a@fexpost.com   -> ek mail ka poora text/html
@@ -58,9 +57,9 @@ export default {
     if (url.pathname.startsWith('/mails')) {
       upstream = PLUS_UPSTREAM;
       path = url.pathname; // /mails, /mails/<id>
-    } else if (url.pathname.startsWith('/temptf/')) {
+    } else if (url.pathname.startsWith('/api/')) {
       upstream = TEMPTF_UPSTREAM;
-      path = url.pathname.replace(/^\/temptf/, ''); // /temptf/account -> /account
+      path = url.pathname.replace(/^\/api/, ''); // /api/account -> /account
     } else {
       return new Response(JSON.stringify({ error: 'not found' }), {
         status: 404,

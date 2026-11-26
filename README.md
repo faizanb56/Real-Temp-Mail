@@ -107,7 +107,37 @@ Register once, log in, then create a mailbox.
   kisi random/unissued address par 404, aur fake `@temp.tf` address par 403
   aata hai — is liye site hamesha `tfCreate()` se issue hui address hi use
   karti hai. Purani saved mailbox agar temp.tf bhool jaye to Refresh par
-  `temp.tf HTTP 404` aayega — tab New dabana hoga.
+  `Mail HTTP 404` aayega — tab New dabana hoga. (2026-11-26 update: proxy
+  path `/temptf/*` se `/api/*` rename kar diya — neeche dekho.)
+
+## Added 2026-11-26 (same day) — Custom domain + style, delete, save, provider hidden
+- **Custom mein domain selection:** Custom modal mein ab 4 domains select
+  hoti hain — Gmail, Outlook, Hotmail, high.edu.pl. Gmail select karne par
+  ek "Address style" dropdown bhi poochta hai: Plus alias (name+tag@),
+  Dot variant (n.a.m.e@) ya Random. Outlook/Hotmail/edu sirf plus-alias
+  dete hain, is liye un par style nahi poochta. Custom name temp.tf par
+  nahi chalta — address hamesha random banta hai, is liye name field
+  temp.tf ke liye chhupa diya gaya hai. (API combos curl se verify kiye:
+  gmail dot-only → dotted address, plus-only → +tag, outlook/hotmail →
+  +tag, edu → random local.)
+- **Delete option:** Saved Mails mein har mail card par ✕ button (sirf
+  Saved list se hatata hai — inbox/server wala mail nahi). Recents mein har
+  mailbox row par Delete button; current mailbox delete ho to agle recent
+  par switch hota hai, koi mailbox na bache to khali state ("No mailbox —
+  New dabao").
+- **Save option:** Inbox ke har mail card par Save button — mail khole
+  baghair seedha Saved Mails mein daal deta hai (dobara dabao to Unsave,
+  label "Saved ✓" se "Save" ho jata hai). Mail modal mein pehle se maujood
+  Save/Unsave button bhi waisa ka waisa hai.
+- **Provider naam hidden (private):** screen par kahin bhi "temp.tf" nahi
+  dikhta — provider label, Custom dropdown, notes, alerts, status errors
+  aur Recents mein address ka domain dikhta hai (gmail.com waghera).
+  Internal provider value `temp.tf` hi hai (fetch logic ke liye), aur
+  network path bhi neutral kar diya: `/temptf/*` → `/api/*` (vercel.json
+  rewrite + worker.js dono). Code comments aur server config (vercel.json
+  destination, worker.js upstream) mein naam rehta hai — browser ko call
+  ke liye asal address chahiye hota hai, is liye source se poori tarah
+  hatana mumkin nahi.
 
 ## Honest limit
 This is a static single-file site, so login data and saved mails live in that

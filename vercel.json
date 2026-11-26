@@ -1,1 +1,1 @@
-{"rewrites":[{"destination":"https://temp.tf/api/:path*","source":"/temptf/:path*"}]}
+{"rewrites":[{"destination":"https://temp.tf/api/:path*","source":"/api/:path*"}]}

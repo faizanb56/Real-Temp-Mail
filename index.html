@@ -239,10 +239,20 @@
                 <h3 class="text-xl font-bold acc-text">Custom Address</h3>
                 <button onclick="$('custom-modal').classList.add('hidden')" class="text-zinc-500 hover:text-white"><i class="fas fa-times text-2xl"></i></button>
             </div>
-            <label class="text-xs text-zinc-400">Name (local part)</label>
-            <input id="custom-local" type="text" placeholder="e.g. faizan123" oninput="updateCustomPreview()" class="w-full bg-black border border-zinc-800 p-3 rounded-xl mt-1 mb-3 outline-none acc-text font-bold">
+            <div id="custom-local-row">
+                <label class="text-xs text-zinc-400">Name (local part)</label>
+                <input id="custom-local" type="text" placeholder="e.g. faizan123" oninput="updateCustomPreview()" class="w-full bg-black border border-zinc-800 p-3 rounded-xl mt-1 mb-3 outline-none acc-text font-bold">
+            </div>
             <label class="text-xs text-zinc-400">Domain — select karo</label>
             <select id="custom-domain" onchange="updateCustomPreview()" class="w-full bg-black border border-zinc-800 p-3 rounded-xl mt-1 mb-1 outline-none text-white"></select>
+            <div id="custom-style-row" class="hidden">
+                <label class="text-xs text-zinc-400">Address style — dot ya plus?</label>
+                <select id="custom-style" onchange="updateCustomPreview()" class="w-full bg-black border border-zinc-800 p-3 rounded-xl mt-1 mb-1 outline-none text-white">
+                    <option value="plus">Plus alias (name+tag@domain)</option>
+                    <option value="dot">Dot variant (n.a.m.e@domain)</option>
+                    <option value="random">Random (dot ya plus)</option>
+                </select>
+            </div>
             <p id="custom-domain-note" class="text-[11px] text-zinc-500 mb-3"></p>
             <p class="text-sm text-zinc-300 mb-4">Preview: <span id="custom-preview" class="acc-text font-bold"></span></p>
             <p id="custom-err" class="text-red-400 text-sm mb-2 hidden"></p>
@@ -378,7 +388,7 @@
             $('auth-screen').classList.add('hidden'); $('app-screen').classList.remove('hidden');
             $('user-label').textContent = currentUser;
             loadData();
-            if (account) { $('email-address').value = account; $('provider-label').textContent = provider; renderInbox(); fetchMessages(false); }
+            if (account) { $('email-address').value = account; $('provider-label').textContent = providerDisplay(provider, account); renderInbox(); fetchMessages(false); }
             else createAccount();
         }
 
@@ -443,7 +453,7 @@
         const TEMPTF_ONLY = true;
         /* tmpBase: Worker URL set ho to Worker use karo, warna '' (same-origin).
            Site Vercel par hosted hai (dono domains), aur repo mein vercel.json
-           /temptf/* ko https://temp.tf/api/* par proxy karta hai — is liye
+           /api/* ko https://temp.tf/api/* par proxy karta hai — is liye
            browser se same-origin call hoti hai, CORS ka sawal hi nahi aata.
            Worker ab sirf optional backup hai (e.g. site kahin aur host ho). */
         function tmpBase() { return TMP_WORKER_URL ? TMP_WORKER_URL.replace(/\/$/, '') : ''; }
@@ -462,23 +472,25 @@
            temp.tf browser se direct CORS nahi deta (preflight 204 par bhi
            koi Access-Control-Allow-Origin header nahi). Is liye site usko
            direct nahi, apne hi origin se call karti hai: repo mein
-           vercel.json /temptf/* ko https://temp.tf/api/* par proxy karta
+           vercel.json /api/* ko https://temp.tf/api/* par proxy karta
            hai (Vercel edge, server-side) — browser ko same-origin request
            dikhti hai, CORS ka sawal hi nahi. Cloudflare Worker ab zaroori
            nahi; TMP_WORKER_URL set ho to Worker use hoga (backup).
-           API: GET /temptf/account (random address) + POST /temptf/check
+           API: GET /api/account (random address) + POST /api/check
            (inbox, full body ke saath). Address @temp.tf wali NAHI hoti —
            Gmail/Outlook/Hotmail plus-alias (jaise name+tag@gmail.com) ya
            @high.edu.pl hoti hai; OTP usi par aata hai. Custom name
            support nahi karta. */
-        async function tfCreate() {
+        async function tfCreate(providers, dot, plus) {
             const base = tmpBase();
             /* Cache-buster: /account random address deta hai — edge cache
                kabhi purana email na de de, is liye har call unique hai. */
-            const res = await fetchJSON(base + '/temptf/account?dot=1&plus=1&_t=' + Date.now());
-            if (!res.ok) throw new Error('temp.tf HTTP ' + res.status);
+            let q = '/api/account?dot=' + (dot === false ? '0' : '1') + '&plus=' + (plus === false ? '0' : '1');
+            if (providers) q += '&providers=' + encodeURIComponent(providers);
+            const res = await fetchJSON(base + q + '&_t=' + Date.now());
+            if (!res.ok) throw new Error('Mail HTTP ' + res.status);
             const d = await res.json();
-            if (!d.email) throw new Error('temp.tf: no email');
+            if (!d.email) throw new Error('No email returned');
             return { address: d.email, password: '', token: '', provider: 'temp.tf' };
         }
         function stripHtml(h) { return String(h || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim(); }
@@ -496,13 +508,21 @@
                 token = d.token; mb.token = d.token; saveData(); return true;
             } catch (e) { return false; }
         }
+        /* Provider display — temp.tf PRIVATE hai, UI mein kahin bhi
+           'temp.tf' nahi dikhana. Internal provider value 'temp.tf' hi
+           rehta hai (fetch logic ke liye), lekin screen par address ka
+           domain dikhate hain (gmail.com / outlook.com / ...). */
+        function providerDisplay(p, addr) {
+            if (p === 'temp.tf') { const d = String(addr || account || '').split('@')[1]; return d || 'Temp Mail'; }
+            return p || '';
+        }
         /* Ek mailbox ko current banao: UI update + save + inbox render + refresh. */
         function useMailbox(mb) {
             account = mb.address; token = mb.token || null; provider = mb.provider;
             mb.createdAt = mb.createdAt || Date.now(); mb.messages = mb.messages || [];
             mailboxes = [mb, ...mailboxes.filter(m => m.address !== mb.address)].slice(0, 20);
             messages = mb.messages.slice(); inboxView = 'inbox'; $('inbox-title').textContent = 'Inbox';
-            $('email-address').value = account; $('provider-label').textContent = provider;
+            $('email-address').value = account; $('provider-label').textContent = providerDisplay(provider, mb.address);
             $('status-line').textContent = 'System Online & Checking for Mails';
             saveData(); renderInbox(); fetchMessages(false);
         }
@@ -534,12 +554,13 @@
             const sel = $('custom-domain'); sel.innerHTML = '<option>Loading domains…</option>';
             domainOptions = [];
             /* TEMPTF_ONLY: sirf temp.tf — baaki providers ke domains
-               temporarily hidden hain. temp.tf ka koi fixed domain nahi
-               hota (random Gmail alias / @high.edu.pl), is liye sirf
-               ek 'temp.tf' option dikhate hain. */
+               temporarily hidden hain. temp.tf ke 4 providers: Gmail,
+               Outlook, Hotmail, high.edu.pl (random address, custom
+               name nahi chalta). */
             if (TEMPTF_ONLY) {
-                domainOptions = [{ domain: 'temp.tf', provider: 'temp.tf' }];
-                sel.innerHTML = domainOptions.map(o => '<option value="' + esc(o.domain) + '">' + esc(o.domain) + '  (' + esc(o.provider) + ')</option>').join('');
+                domainOptions = [{ domain: 'gmail.com', provider: 'temp.tf' }, { domain: 'outlook.com', provider: 'temp.tf' }, { domain: 'hotmail.com', provider: 'temp.tf' }, { domain: 'high.edu.pl', provider: 'temp.tf' }];
+                /* Provider naam nahi dikhana (temp.tf private hai) — sirf domain. */
+                sel.innerHTML = domainOptions.map(o => '<option value="' + esc(o.domain) + '">' + esc(o.domain) + '</option>').join('');
                 updateCustomPreview();
                 return;
             }
@@ -563,8 +584,23 @@
             const local = ($('custom-local').value.trim() || 'yourname').replace(/[^a-zA-Z0-9._-]/g, '').toLowerCase();
             const dom = $('custom-domain').value || '';
             const opt = domainOptions.find(o => o.domain === dom);
+            const isTF = !!(opt && opt.provider === 'temp.tf');
+            /* temp.tf: custom name nahi chalta (random address banta hai),
+               is liye name field chhupao. Dot/plus sirf Gmail par poocho —
+               Outlook, Hotmail aur high.edu.pl sirf plus-alias dete hain. */
+            $('custom-local-row').classList.toggle('hidden', isTF);
+            const style = $('custom-style').value;
+            $('custom-style-row').classList.toggle('hidden', !(isTF && dom === 'gmail.com'));
+            if (isTF) {
+                let ex = 'random123';
+                if (dom === 'gmail.com') ex = style === 'dot' ? 'r.a.n.d.o.m' : style === 'plus' ? 'random+tag' : 'random';
+                else if (dom === 'outlook.com' || dom === 'hotmail.com') ex = 'random+tag';
+                $('custom-preview').textContent = ex + '@' + dom + '  (random)';
+                $('custom-domain-note').textContent = 'Random address banega, custom name nahi chalega. Sirf domain aur style select karo.';
+                return;
+            }
             $('custom-preview').textContent = local + '@' + dom;
-            $('custom-domain-note').textContent = opt ? ('Provider: ' + opt.provider + (opt.provider === 'guerrillamail' ? ' — GuerrillaMail custom name support karta hai.' : opt.provider === '1secmail' ? ' — 1SecMail par ye address direct use hoga, koi account create nahi hota.' : opt.provider === 'tempmail.plus' ? ' — TempMail Plus (Worker proxy se).' : opt.provider === 'temp.tf' ? ' — temp.tf (Worker proxy se) — random Gmail alias address banega, custom name nahi chalega.' : '')) : '';
+            $('custom-domain-note').textContent = opt ? ('Provider: ' + opt.provider + (opt.provider === 'guerrillamail' ? ' — GuerrillaMail custom name support karta hai.' : opt.provider === '1secmail' ? ' — 1SecMail par ye address direct use hoga, koi account create nahi hota.' : opt.provider === 'tempmail.plus' ? ' — TempMail Plus (Worker proxy se).' : '')) : '';
         }
         function customAddress() {
             $('custom-local').value = randId(8);
@@ -573,10 +609,26 @@
             loadDomains();
         }
         async function createCustomAddress() {
-            const local = $('custom-local').value.trim().replace(/[^a-zA-Z0-9._-]/g, '').toLowerCase();
             const domain = $('custom-domain').value;
-            if (!local) { const e = $('custom-err'); e.textContent = 'Valid name likho.'; e.classList.remove('hidden'); return; }
             const opt = domainOptions.find(o => o.domain === domain) || { provider: 'mail.tm' };
+            /* temp.tf: custom name nahi chalta — name validation skip karo.
+               Domain se provider map karo, Gmail par dot/plus style poocho;
+               Outlook/Hotmail/edu sirf plus-alias dete hain. */
+            if (opt.provider === 'temp.tf') {
+                $('custom-modal').classList.add('hidden');
+                const provMap = { 'gmail.com': 'gmail', 'outlook.com': 'outlook', 'hotmail.com': 'hotmail', 'high.edu.pl': 'high.edu.pl' };
+                let dot = true, plus = true;
+                if (domain === 'gmail.com') {
+                    const st = $('custom-style').value;
+                    if (st === 'dot') { dot = true; plus = false; }
+                    else if (st === 'plus') { dot = false; plus = true; }
+                } else { dot = false; plus = true; }
+                try { useMailbox(await tfCreate(provMap[domain] || null, dot, plus)); }
+                catch (e) { alert('Address fail — dobara try karo.'); }
+                return;
+            }
+            const local = $('custom-local').value.trim().replace(/[^a-zA-Z0-9._-]/g, '').toLowerCase();
+            if (!local) { const e = $('custom-err'); e.textContent = 'Valid name likho.'; e.classList.remove('hidden'); return; }
             $('custom-modal').classList.add('hidden');
             if (opt.provider === '1secmail') {
                 useMailbox({ address: local + '@' + domain, password: '', token: '', provider: '1secmail', createdAt: Date.now(), messages: [] });
@@ -592,18 +644,13 @@
                 catch (e) { alert('TempMail Plus fail — Worker URL check karo, random address ban raha hai.'); await createAccount(); }
                 return;
             }
-            if (opt.provider === 'temp.tf') {
-                try { useMailbox(await tfCreate()); }
-                catch (e) { alert('temp.tf fail — dobara try karo.'); }
-                return;
-            }
             await createAccount(local, domain);
         }
         function switchMailbox(address) {
             const mb = mailboxes.find(m => m.address === address); if (!mb) return;
             account = mb.address; token = mb.token || null; provider = mb.provider;
             messages = mb.messages || []; inboxView = 'inbox'; $('inbox-title').textContent = 'Inbox';
-            $('email-address').value = account; $('provider-label').textContent = provider;
+            $('email-address').value = account; $('provider-label').textContent = providerDisplay(provider, mb.address);
             $('recents-box').classList.add('hidden'); saveData(); renderInbox(); fetchMessages(false);
         }
 
@@ -649,8 +696,8 @@
                     fresh = (data.mail_list || []).map(m => ({ id: String(m.mail_id), from: m.from_mail || m.from_name || '', subject: m.subject || '(No Subject)', intro: '', createdAt: m.time || new Date().toISOString(), body: null, html: null }));
                 } else if (provider === 'temp.tf') {
                     const base = tmpBase();
-                    const res = await fetchJSON(base + '/temptf/check', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: account }) });
-                    if (!res.ok) throw new Error('temp.tf HTTP ' + res.status);
+                    const res = await fetchJSON(base + '/api/check', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: account }) });
+                    if (!res.ok) throw new Error('Mail HTTP ' + res.status);
                     const data = await res.json();
                     /* /check full body de deta hai — body/html yahin set kar
                        dete hain, openMail ko dobara fetch nahi karna parta. */
@@ -711,12 +758,33 @@
                 const card = document.createElement('div');
                 card.className = 'mail-card p-5 bg-zinc-900 rounded-2xl border border-zinc-800 cursor-pointer transition-all flex justify-between items-center';
                 const otp = extractOtp((msg.subject || '') + ' ' + (msg.intro || ''));
-                card.innerHTML = '<div class="flex-1 min-w-0"><h4 class="font-bold acc-text truncate">' + esc(msg.from) + '</h4><p class="text-sm text-gray-300 truncate font-semibold">' + esc(msg.subject) + '</p><p class="text-xs text-gray-500 mt-1">' + esc(msg.intro || '') + '</p>' + (otp ? '<p class="text-xs mt-1 acc-text font-bold">OTP: ' + esc(otp) + '</p>' : '') + '</div><div class="ml-4 text-[10px] text-gray-600 font-mono">' + new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + '</div>';
+                card.innerHTML = '<div class="flex-1 min-w-0"><h4 class="font-bold acc-text truncate">' + esc(msg.from) + '</h4><p class="text-sm text-gray-300 truncate font-semibold">' + esc(msg.subject) + '</p><p class="text-xs text-gray-500 mt-1">' + esc(msg.intro || '') + '</p>' + (otp ? '<p class="text-xs mt-1 acc-text font-bold">OTP: ' + esc(otp) + '</p>' : '') + '</div><div class="ml-4 text-[10px] text-gray-600 font-mono">' + new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + '</div>' + (inboxView === 'saved' ? '<button class="ml-2 shrink-0 text-red-400 hover:text-red-300 text-lg leading-none px-2" onclick="deleteSaved(\'' + esc(msg.id) + '\', event)" title="Delete saved mail">✕</button>' : (inboxView === 'inbox' ? '<button class="ml-2 shrink-0 text-xs acc-text font-bold px-2" onclick="toggleSaveMail(\'' + esc(msg.id) + '\', event)">' + (saved.some(s => String(s.id) === String(msg.id)) ? 'Saved ✓' : 'Save') + '</button>' : ''));
                 card.onclick = () => openMail(msg.id);
                 inboxEl.appendChild(card);
             });
         }
         function extractOtp(text) { const m = String(text || '').match(/\b\d{4,8}\b/); return m ? m[0] : null; }
+        /* Saved mail delete (Saved view mein har card par ✕ button).
+           Inbox wale mails delete nahi hote — wo server par hote hain aur
+           Refresh par wapas aa jayenge; sirf Saved list se hatate hain. */
+        function deleteSaved(id, ev) {
+            if (ev) ev.stopPropagation(); // card ka openMail na khule
+            saved = saved.filter(s => String(s.id) !== String(id));
+            saveData();
+            if (currentMsg && String(currentMsg.id) === String(id)) { currentMsg = null; $('mail-modal').classList.add('hidden'); }
+            if (inboxView === 'saved') renderInbox();
+        }
+        /* Inbox card par Save button — mail khole baghair seedha Saved mein
+           daalo, phir wo Saved Mails mein rehta hai. Dobara dabao to
+           Unsave ho jata hai (label 'Saved ✓' se 'Save' ho jata hai). */
+        function toggleSaveMail(id, ev) {
+            if (ev) ev.stopPropagation(); // card ka openMail na khule
+            const msg = messages.find(m => String(m.id) === String(id));
+            if (!msg) return;
+            const i = saved.findIndex(s => String(s.id) === String(id));
+            if (i >= 0) saved.splice(i, 1); else saved.unshift(msg);
+            saveData(); renderInbox();
+        }
 
         /* ---------- Open mail, Copy OTP, Save ---------- */
         async function openMail(id) {
@@ -744,7 +812,7 @@
                         const data = await res.json(); body = data.text; html = data.html || null;
                     } else if (provider === 'temp.tf') {
                         const base = tmpBase();
-                        const res = await fetchJSON(base + '/temptf/check', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: account }) });
+                        const res = await fetchJSON(base + '/api/check', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: account }) });
                         const data = await res.json(); const m = (data.data || []).find(x => String(x.id) === String(id));
                         if (m) { const isHtml = (m.bodyContentType || 'text').toLowerCase() === 'html'; body = isHtml ? null : (m.body || ''); html = isHtml ? (m.body || null) : null; }
                     }
@@ -777,8 +845,27 @@
             const box = $('recents-box'); inboxView = 'inbox'; $('inbox-title').textContent = 'Inbox';
             const recent = mailboxes.slice(0, 5);
             if (!recent.length) { box.innerHTML = '<p class="text-xs text-zinc-500 text-center">Koi recent mailbox nahi hai.</p>'; }
-            else box.innerHTML = '<p class="text-xs text-zinc-500 uppercase tracking-widest mb-1">My Recents — last 5 mails</p>' + recent.map(m => '<div class="flex justify-between items-center bg-black/40 border border-zinc-800 rounded-xl px-3 py-2 text-sm"><span class="truncate acc-text font-semibold">' + esc(m.address) + '</span><span class="text-[10px] text-zinc-500 ml-2">' + esc(m.provider) + ' • ' + new Date(m.createdAt).toLocaleDateString() + '</span><span class="flex gap-2 ml-2"><button class="text-xs acc-text" onclick="switchMailbox(\'' + esc(m.address) + '\')">Open</button><button class="text-xs text-zinc-400" onclick="copyText(\'' + esc(m.address) + '\')">Copy</button></span></div>').join('');
+            else box.innerHTML = '<p class="text-xs text-zinc-500 uppercase tracking-widest mb-1">My Recents — last 5 mails</p>' + recent.map(m => '<div class="flex justify-between items-center bg-black/40 border border-zinc-800 rounded-xl px-3 py-2 text-sm"><span class="truncate acc-text font-semibold">' + esc(m.address) + '</span><span class="text-[10px] text-zinc-500 ml-2">' + esc(providerDisplay(m.provider, m.address)) + ' • ' + new Date(m.createdAt).toLocaleDateString() + '</span><span class="flex gap-2 ml-2"><button class="text-xs acc-text" onclick="switchMailbox(\'' + esc(m.address) + '\')">Open</button><button class="text-xs text-zinc-400" onclick="copyText(\'' + esc(m.address) + '\')">Copy</button><button class="text-xs text-red-400" onclick="deleteRecent(\'' + esc(m.address) + '\', event)">Delete</button></span></div>').join('');
             box.classList.remove('hidden'); renderInbox();
+        }
+        /* Recent mailbox delete (Recents list mein har row par Delete button).
+           Current mailbox delete ho to agle recent par switch karte hain;
+           koi mailbox na bache to khali state dikhate hain (New dabana hoga). */
+        function deleteRecent(address, ev) {
+            if (ev) ev.stopPropagation();
+            const wasCurrent = (address === account);
+            mailboxes = mailboxes.filter(m => m.address !== address);
+            saveData();
+            if (wasCurrent) {
+                if (mailboxes.length) { switchMailbox(mailboxes[0].address); }
+                else {
+                    account = null; token = null; provider = null; messages = [];
+                    $('email-address').value = ''; $('provider-label').textContent = '';
+                    $('status-line').textContent = 'No mailbox — New dabao';
+                    renderInbox();
+                }
+            }
+            showRecents();
         }
         function copyText(t) { navigator.clipboard.writeText(t); }
 
