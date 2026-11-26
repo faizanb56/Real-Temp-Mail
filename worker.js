@@ -1,5 +1,11 @@
-/* TempMail proxy — Cloudflare Worker (free tier)
+/* TempMail proxy — Cloudflare Worker (free tier) — OPTIONAL BACKUP
    =====================================================
+   2026-11-26: Worker ab zaroori NAHI raha. Site Vercel par hosted hai
+   aur repo mein vercel.json /temptf/* ko https://temp.tf/api/* par
+   proxy karta hai (same-origin, CORS bypass) — kuch deploy nahi karna
+   parta. Ye Worker sirf backup hai agar site kabhi Vercel ke bajaye
+   kahin aur host ho (jahan vercel.json kaam na kare): tab isko deploy
+   karke uska URL index.html mein TMP_WORKER_URL mein daalo.
    WHY THIS EXISTS:
    temp.tf aur tempmail.plus ki APIs asli hain aur kaam karti hain,
    lekin wo browser ko CORS headers nahi deti — is liye koi bhi static

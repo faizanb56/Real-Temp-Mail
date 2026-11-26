@@ -86,10 +86,28 @@ Register once, log in, then create a mailbox.
   via curl (account + empty-inbox check both 200; service reports 8M+ mails).
 - **Same Worker, extended:** `worker.js` now also forwards `/temptf/*` to
   `https://temp.tf/api/*` (temp.tf sends NO CORS headers either — preflight
-  204 without `Access-Control-Allow-Origin`). Deploy the Worker and paste its
-  URL into `TMP_WORKER_URL` — until then temp.tf is skipped and New fails,
-  because it is the only provider. The same Worker URL also switches
-  TempMail Plus back on if `TEMPTF_ONLY` is later turned off.
+  204 without `Access-Control-Allow-Origin`). Same day superseded by the
+  Vercel rewrite below (no Worker deployment needed anymore); the Worker
+  stays in the repo as a backup only.
+
+## Added 2026-11-26 (same day) — Vercel proxy: Worker ki zaroorat khatam
+- **CORS bypass without any deployment:** dono domains (tempmail.faizansuper1.tech
+  aur realtempmail.vercel.app) Vercel par hosted hain — GitHub Pages par nahi.
+  Repo mein `vercel.json` add kar diya: `/temptf/*` → `https://temp.tf/api/*`
+  (Vercel edge rewrite, server-side). Site temp.tf ko apne hi origin se call
+  karti hai, is liye browser ko CORS ka sawal hi nahi aata. Faizan ko kuch
+  deploy nahi karna — GitHub push karte hi Vercel khud redeploy kar deta hai.
+- **`tmpBase()`:** `TMP_WORKER_URL` set ho to Worker use hota hai (backup),
+  warna `''` (same-origin Vercel rewrite). TempMail Plus ab bhi Worker-only
+  hai (uske liye koi rewrite nahi) — wo `TEMPTF_ONLY` ki wajah se waise bhi
+  band hai.
+- **Live verified:** push ke baad dono domains par `/temptf/account` aur
+  `/temptf/check` curl se test kiye — random address bana aur inbox check
+  hua. Note: `/check` sirf temp.tf se issue hui address par 200 deta hai;
+  kisi random/unissued address par 404, aur fake `@temp.tf` address par 403
+  aata hai — is liye site hamesha `tfCreate()` se issue hui address hi use
+  karti hai. Purani saved mailbox agar temp.tf bhool jaye to Refresh par
+  `temp.tf HTTP 404` aayega — tab New dabana hoga.
 
 ## Honest limit
 This is a static single-file site, so login data and saved mails live in that

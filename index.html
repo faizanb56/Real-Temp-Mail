@@ -439,9 +439,14 @@
            Baaki providers (Mail.tm, GuerrillaMail, 1SecMail, Mail.gw, TempMail Plus)
            TEMPORARILY band hain — unka code waisa ka waisa hai, sirf chain aur
            Custom dropdown se hata diye gaye hain. Wapas on karne ke liye sirf
-           false karo. Note: Worker URL set hone tak temp.tf bhi skip/fail hoga. */
+           false karo. */
         const TEMPTF_ONLY = true;
-        function tmpBase() { return TMP_WORKER_URL ? TMP_WORKER_URL.replace(/\/$/, '') : null; }
+        /* tmpBase: Worker URL set ho to Worker use karo, warna '' (same-origin).
+           Site Vercel par hosted hai (dono domains), aur repo mein vercel.json
+           /temptf/* ko https://temp.tf/api/* par proxy karta hai — is liye
+           browser se same-origin call hoti hai, CORS ka sawal hi nahi aata.
+           Worker ab sirf optional backup hai (e.g. site kahin aur host ho). */
+        function tmpBase() { return TMP_WORKER_URL ? TMP_WORKER_URL.replace(/\/$/, '') : ''; }
         async function tmpCreate(customLocal, customDomain) {
             const base = tmpBase(); if (!base) throw new Error('tempmail.plus worker not configured');
             const domain = customDomain && TMP_DOMAINS.includes(customDomain) ? customDomain : TMP_DOMAINS[Math.floor(Math.random() * TMP_DOMAINS.length)];
@@ -453,17 +458,24 @@
             if (!res.ok) throw new Error('tempmail.plus HTTP ' + res.status);
             return { address, password: '', token: '', provider: 'tempmail.plus' };
         }
-        /* ---------- temp.tf — via apna Cloudflare Worker ----------
+        /* ---------- temp.tf — via Vercel rewrite (same-origin, CORS bypass) ----------
            temp.tf browser se direct CORS nahi deta (preflight 204 par bhi
-           koi Access-Control-Allow-Origin header nahi), is liye isko bhi
-           Worker proxy se call karte hain: GET /temptf/account (random
-           address) + POST /temptf/check (inbox, full body ke saath).
-           Address @temp.tf wali NAHI hoti — Gmail/Outlook/Hotmail
-           plus-alias (jaise name+tag@gmail.com) ya @high.edu.pl hoti hai;
-           OTP usi par aata hai. Custom name support nahi karta. */
+           koi Access-Control-Allow-Origin header nahi). Is liye site usko
+           direct nahi, apne hi origin se call karti hai: repo mein
+           vercel.json /temptf/* ko https://temp.tf/api/* par proxy karta
+           hai (Vercel edge, server-side) — browser ko same-origin request
+           dikhti hai, CORS ka sawal hi nahi. Cloudflare Worker ab zaroori
+           nahi; TMP_WORKER_URL set ho to Worker use hoga (backup).
+           API: GET /temptf/account (random address) + POST /temptf/check
+           (inbox, full body ke saath). Address @temp.tf wali NAHI hoti —
+           Gmail/Outlook/Hotmail plus-alias (jaise name+tag@gmail.com) ya
+           @high.edu.pl hoti hai; OTP usi par aata hai. Custom name
+           support nahi karta. */
         async function tfCreate() {
-            const base = tmpBase(); if (!base) throw new Error('temp.tf worker not configured');
-            const res = await fetchJSON(base + '/temptf/account?dot=1&plus=1');
+            const base = tmpBase();
+            /* Cache-buster: /account random address deta hai — edge cache
+               kabhi purana email na de de, is liye har call unique hai. */
+            const res = await fetchJSON(base + '/temptf/account?dot=1&plus=1&_t=' + Date.now());
             if (!res.ok) throw new Error('temp.tf HTTP ' + res.status);
             const d = await res.json();
             if (!d.email) throw new Error('temp.tf: no email');
@@ -582,7 +594,7 @@
             }
             if (opt.provider === 'temp.tf') {
                 try { useMailbox(await tfCreate()); }
-                catch (e) { alert('temp.tf fail — Worker URL check karo.'); }
+                catch (e) { alert('temp.tf fail — dobara try karo.'); }
                 return;
             }
             await createAccount(local, domain);
@@ -636,7 +648,7 @@
                     if (data && data.result === false) throw new Error('tempmail.plus: inbox failed');
                     fresh = (data.mail_list || []).map(m => ({ id: String(m.mail_id), from: m.from_mail || m.from_name || '', subject: m.subject || '(No Subject)', intro: '', createdAt: m.time || new Date().toISOString(), body: null, html: null }));
                 } else if (provider === 'temp.tf') {
-                    const base = tmpBase(); if (!base) throw new Error('temp.tf worker not configured');
+                    const base = tmpBase();
                     const res = await fetchJSON(base + '/temptf/check', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: account }) });
                     if (!res.ok) throw new Error('temp.tf HTTP ' + res.status);
                     const data = await res.json();
@@ -731,7 +743,7 @@
                         const res = await fetchJSON(base + '/mails/' + id + '?email=' + encodeURIComponent(account));
                         const data = await res.json(); body = data.text; html = data.html || null;
                     } else if (provider === 'temp.tf') {
-                        const base = tmpBase(); if (!base) throw new Error('temp.tf worker not configured');
+                        const base = tmpBase();
                         const res = await fetchJSON(base + '/temptf/check', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: account }) });
                         const data = await res.json(); const m = (data.data || []).find(x => String(x.id) === String(id));
                         if (m) { const isHtml = (m.bodyContentType || 'text').toLowerCase() === 'html'; body = isHtml ? null : (m.body || ''); html = isHtml ? (m.body || null) : null; }
