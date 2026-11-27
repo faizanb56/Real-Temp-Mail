@@ -199,6 +199,7 @@
             <button onclick="fetchMessages(true)" class="text-xs bg-zinc-800 hover:bg-zinc-700 px-3 py-2 rounded-xl"><i class="fas fa-sync"></i> Refresh</button>
             <button onclick="showSaved()" class="text-xs bg-zinc-800 hover:bg-zinc-700 px-3 py-2 rounded-xl"><i class="fas fa-bookmark"></i> Saved (<span id="saved-count">0</span>)</button>
             <button onclick="showRecents()" class="text-xs bg-zinc-800 hover:bg-zinc-700 px-3 py-2 rounded-xl"><i class="fas fa-history"></i> Recents</button>
+            <button onclick="saveLatestMail()" class="text-xs bg-zinc-800 hover:bg-zinc-700 px-3 py-2 rounded-xl"><i class="fas fa-bookmark"></i> <span id="save-mail-btn-label">Save mail</span></button>
         </div>
         <div class="mt-4 flex items-center justify-center gap-2 text-[10px] text-gray-500 uppercase tracking-widest">
             <span class="inline-block w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
@@ -211,7 +212,10 @@
     <!-- Inbox -->
     <div class="w-full max-w-2xl">
         <div class="flex justify-between items-center mb-4 px-2">
-            <h2 id="inbox-title" class="text-xl font-bold italic">Inbox</h2>
+            <div class="flex items-center gap-1">
+                <button id="back-inbox-btn" onclick="showInbox()" class="hidden text-zinc-400 hover:text-white text-lg leading-none px-2" title="Back to Inbox">✕</button>
+                <h2 id="inbox-title" class="text-xl font-bold italic">Inbox</h2>
+            </div>
             <button onclick="fetchMessages(true)" class="text-xs acc-text hover:underline">Manual Refresh</button>
         </div>
 
@@ -553,7 +557,11 @@
                    sirf tab try hota hai jab TMP_WORKER_URL set ho (warna foran
                    skip). Mail.gw aaj kal down hai (12s timeout), is liye sab se
                    aakhir mein sirf 5s timeout ke saath. */
-                const tries = TEMPTF_ONLY ? [() => tfCreate()] : [() => tmCreate('https://api.mail.tm', customLocal, customDomain), () => guerrillaCreate(customLocal), () => tmpCreate(customLocal, customDomain), () => secmailCreate(), () => tmCreate('https://api.mail.gw', customLocal, customDomain, 5000)];
+                /* TEMPTF_ONLY: New dabane par Gmail / Outlook / Hotmail /
+                   high.edu.pl mein se EK provider random pick hota hai
+                   (dot sirf Gmail ke liye, baaki plus-only). 1SecMail aur
+                   baaki providers band hain — chain mein sirf temp.tf. */
+                const tries = TEMPTF_ONLY ? [() => { const ps = ['gmail', 'outlook', 'hotmail', 'high.edu.pl']; const p = ps[Math.floor(Math.random() * ps.length)]; return tfCreate(p, p === 'gmail', true); }] : [() => tmCreate('https://api.mail.tm', customLocal, customDomain), () => guerrillaCreate(customLocal), () => tmpCreate(customLocal, customDomain), () => secmailCreate(), () => tmCreate('https://api.mail.gw', customLocal, customDomain, 5000)];
                 for (const t of tries) { try { mb = await t(); break; } catch (e) { lastErr = e; console.warn('provider failed, trying next:', e.message); } }
                 if (!mb) throw lastErr || new Error('All providers failed');
                 useMailbox(mb);
@@ -748,6 +756,11 @@
         function renderInbox() {
             const list = inboxView === 'saved' ? saved : messages;
             const inboxEl = $('inbox');
+            /* Back ✕ (sirf Saved view mein dikhta hai — Inbox wapas) aur
+               action-row Save mail button ka label (nayi mail saved hai
+               to 'Saved ✓', warna 'Save mail'). */
+            const bb = $('back-inbox-btn'); if (bb) bb.classList.toggle('hidden', inboxView !== 'saved');
+            const sl = $('save-mail-btn-label'); if (sl) sl.textContent = (messages.length && saved.some(s => String(s.id) === String(messages[0].id))) ? 'Saved ✓' : 'Save mail';
             /* BUG FIX (2026-11-19 browser test): #status-msg #inbox ke ANDAR hai.
                Pehle non-empty render mein inboxEl.innerHTML = '' usko hamesha ke
                liye delete kar deta tha — uske baad har render "Cannot read
@@ -799,6 +812,20 @@
             const msg = messages.find(m => String(m.id) === String(id));
             if (!msg) return;
             const i = saved.findIndex(s => String(s.id) === String(id));
+            if (i >= 0) saved.splice(i, 1);
+            else {
+                if (saved.length >= MAX_SAVED) { alert('Sirf 10 mails save ho sakti hain — pehle koi saved mail delete karo.'); return; }
+                saved.unshift(msg);
+            }
+            saveData(); renderInbox();
+        }
+        /* Action row ka Save mail button — inbox ki sab se upar wali (nayi)
+           mail ko Saved mein daalo (max 10). Dobara dabao to unsave.
+           Inbox khali ho to alert. */
+        function saveLatestMail() {
+            if (!messages.length) { alert('Inbox khali hai — abhi koi mail nahi aaya.'); return; }
+            const msg = messages[0];
+            const i = saved.findIndex(s => String(s.id) === String(msg.id));
             if (i >= 0) saved.splice(i, 1);
             else {
                 if (saved.length >= MAX_SAVED) { alert('Sirf 10 mails save ho sakti hain — pehle koi saved mail delete karo.'); return; }
@@ -866,13 +893,18 @@
             if (inboxView === 'saved') renderInbox();
         }
         function showSaved() { inboxView = 'saved'; $('inbox-title').textContent = 'Saved Mails'; $('recents-box').classList.add('hidden'); renderInbox(); }
+        /* Saved view se Inbox wapas (title ke paas wala ✕ button). */
+        function showInbox() { inboxView = 'inbox'; $('inbox-title').textContent = 'Inbox'; renderInbox(); }
         function showRecents() {
             const box = $('recents-box'); inboxView = 'inbox'; $('inbox-title').textContent = 'Inbox';
             const recent = mailboxes.slice(0, 5);
-            if (!recent.length) { box.innerHTML = '<p class="text-xs text-zinc-500 text-center">Koi recent mailbox nahi hai.</p>'; }
-            else box.innerHTML = '<p class="text-xs text-zinc-500 uppercase tracking-widest mb-1">My Recents — last 5 mails</p>' + recent.map(m => '<div class="flex justify-between items-center bg-black/40 border border-zinc-800 rounded-xl px-3 py-2 text-sm"><span class="truncate acc-text font-semibold">' + esc(m.address) + '</span><span class="text-[10px] text-zinc-500 ml-2">' + esc(providerDisplay(m.provider, m.address)) + ' • ' + new Date(m.createdAt).toLocaleDateString() + '</span><span class="flex gap-2 ml-2"><button class="text-xs acc-text" onclick="switchMailbox(\'' + esc(m.address) + '\')">Open</button><button class="text-xs text-zinc-400" onclick="copyText(\'' + esc(m.address) + '\')">Copy</button><button class="text-xs text-red-400" onclick="deleteRecent(\'' + esc(m.address) + '\', event)">Delete</button></span></div>').join('');
+            const head = '<div class="flex justify-between items-center mb-1"><p class="text-xs text-zinc-500 uppercase tracking-widest">My Recents — last 5 mails</p><button class="text-zinc-500 hover:text-white text-sm leading-none px-2" onclick="hideRecents()" title="Close">✕</button></div>';
+            if (!recent.length) { box.innerHTML = head + '<p class="text-xs text-zinc-500 text-center">Koi recent mailbox nahi hai.</p>'; }
+            else box.innerHTML = head + recent.map(m => '<div class="flex justify-between items-center bg-black/40 border border-zinc-800 rounded-xl px-3 py-2 text-sm"><span class="truncate acc-text font-semibold">' + esc(m.address) + '</span><span class="text-[10px] text-zinc-500 ml-2">' + esc(providerDisplay(m.provider, m.address)) + ' • ' + new Date(m.createdAt).toLocaleDateString() + '</span><span class="flex gap-2 ml-2"><button class="text-xs acc-text" onclick="switchMailbox(\'' + esc(m.address) + '\')">Open</button><button class="text-xs text-zinc-400" onclick="copyText(\'' + esc(m.address) + '\')">Copy</button><button class="text-xs text-red-400" onclick="deleteRecent(\'' + esc(m.address) + '\', event)">Delete</button></span></div>').join('');
             box.classList.remove('hidden'); renderInbox();
         }
+        /* Recents box band karo (uske header wala ✕ button). */
+        function hideRecents() { $('recents-box').classList.add('hidden'); }
         /* Recent mailbox delete (Recents list mein har row par Delete button).
            Current mailbox delete ho to agle recent par switch karte hain;
            koi mailbox na bache to khali state dikhate hain (New dabana hoga). */

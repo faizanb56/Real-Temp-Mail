@@ -154,6 +154,26 @@ Register once, log in, then create a mailbox.
   ڈیویلپر مسٹر فیضان بشیر (Urdu mein bhi). Disclaimer hata diya gaya hai.
   Hover karne par ticker ruk jata hai.
 
+## Added 2026-11-27 — Save mail button, random domain, back ✕
+- **Save mail button (action row):** Email box ke neeche wale buttons
+  (Custom / Refresh / Saved / Recents) mein **Save mail** button bhi hai —
+  inbox ki sab se upar wali (nayi) mail ko seedha Saved Mails mein daal
+  deta hai (max 10, delete karne tak rehti hai). Dobara dabao to unsave;
+  label 'Saved ✓' ho jata hai jab nayi mail saved ho. Inbox khali ho to
+  alert aata hai. (Mail card par Save aur modal mein Save mail pehle se
+  the — ye teesra rasta hai.)
+- **New = random domain:** New dabane par Gmail / Outlook / Hotmail /
+  high.edu.pl mein se EK provider random pick hota hai (dot sirf Gmail
+  ke liye, baaki plus-only). Pehle provider param nahi bheja jata tha,
+  ab ek random provider select hota hai.
+- **1SecMail band:** temp.tf-only mode mein 1SecMail pehle se band hai —
+  creation chain mein sirf temp.tf hai, Custom dropdown mein sirf 4
+  temp.tf domains hain. Is ke liye koi code change nahi chahiye tha.
+- **Back / close ✕:** Saved Mails view mein title ke paas ✕ button hai —
+  dabao to Inbox wapas aa jata hai (pehle wapas jaane ka koi rasta nahi
+  tha). Recents list ke header mein ✕ hai — dabao to list band ho jati
+  hai. Mail modal aur Custom modal mein ✕ pehle se tha.
+
 ## Honest limit
 This is a static single-file site, so login data and saved mails live in that
 browser only. The same username/password on another mobile will show the saved
