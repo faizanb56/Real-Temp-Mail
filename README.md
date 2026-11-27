@@ -13,7 +13,7 @@ Outfit / sky-glow look, same `REAL TEMP MAIL` header):
   (needs Worker URL, see below) → 1SecMail → Mail.gw last (currently down).
   If one provider fails, the next one is tried automatically. Provider name and
   last-check time are shown under the email box.
-- **Session save:** mailboxes, messages and saved mails are saved in the browser
+- **Session save:** mailboxes, messages and saved emails are saved in the browser
   (localStorage, per logged-in user), so refresh keeps your inbox. Auto-refresh
   every 5 seconds, plus a manual Refresh button.
 - **Login / Register (first screen):** glass-card UI with animated gradient orbs.
@@ -25,7 +25,7 @@ Outfit / sky-glow look, same `REAL TEMP MAIL` header):
   local part.
 - **Copy OTP:** 4–8 digit OTPs are auto-detected in mails and shown with a
   Copy OTP button in the mail view.
-- **Saved + Recents:** Saved mails button, and Recents shows your last 5 mailboxes
+- **Saved + Recents:** Saved emails button (favorite addresses), and Recents shows your last 5 mailboxes
   with provider and date — Open / Copy from there.
 - **6 themes:** Sky Blue, Emerald, Crimson Red, Violet, Amber Gold, Rose Pink.
   Theme choice is saved.
@@ -120,15 +120,17 @@ Register once, log in, then create a mailbox.
   temp.tf ke liye chhupa diya gaya hai. (API combos curl se verify kiye:
   gmail dot-only → dotted address, plus-only → +tag, outlook/hotmail →
   +tag, edu → random local.)
-- **Delete option:** Saved Mails mein har mail card par ✕ button (sirf
-  Saved list se hatata hai — inbox/server wala mail nahi). Recents mein har
-  mailbox row par Delete button; current mailbox delete ho to agle recent
-  par switch hota hai, koi mailbox na bache to khali state ("No mailbox —
-  New dabao").
-- **Save option:** Inbox ke har mail card par Save button — mail khole
-  baghair seedha Saved Mails mein daal deta hai (dobara dabao to Unsave,
-  label "Saved ✓" se "Save" ho jata hai). Mail modal mein pehle se maujood
-  Save/Unsave button bhi waisa ka waisa hai.
+- **Delete option:** Saved Emails mein har saved email row par ✕ button
+  (sirf favorites list se hatata hai). Recents mein har mailbox row par
+  Delete button; current mailbox delete ho to agle recent par switch hota
+  hai, koi mailbox na bache to khali state ("No mailbox — New dabao").
+- **Save email (favorites):** Action row ka **Save email** button current
+  email address ko Saved Emails mein save karta hai (max 10, dobara dabao
+  to unsave, label "Saved ✓" ho jata hai). Saved Emails se user jab chahe
+  wahi address dobara khol sakta hai (Open button — Recents mein ho to
+  switch, warna naya mailbox entry bana kar inbox check hota hai), Copy
+  kar sakta hai, ya ✕ se delete kar sakta hai. Mail MESSAGES save nahi
+  hote — sirf email address save hota hai (user favorite email).
 - **Provider naam hidden (private):** screen par kahin bhi "temp.tf" nahi
   dikhta — provider label, Custom dropdown, notes, alerts, status errors
   aur Recents mein address ka domain dikhta hai (gmail.com waghera).
@@ -139,14 +141,16 @@ Register once, log in, then create a mailbox.
   ke liye asal address chahiye hota hai, is liye source se poori tarah
   hatana mumkin nahi.
 
-## Added 2026-11-26 (same day) — Saved max 10 + disclaimer ticker
-- **Saved mails max 10:** Saved Mails mein sirf 10 mails save ho sakti
-  hain (counter "Saved (n/10)" dikhta hai). 11th save karne par alert
-  aata hai — pehle koi saved mail delete karo. Saved mails tab tak rehti
-  hain jab tak user khud delete na kare (localStorage mein save hoti hain,
-  per logged-in user; delete ✕ button Saved view mein hai, aur modal mein
-  Unsave bhi hai). Limit dono save raaston par lagti hai (inbox card ka
-  Save button aur mail modal ka Save mail button).
+## Added 2026-11-26 (same day) — Saved emails max 10 + disclaimer ticker
+- **Saved emails max 10:** Saved Emails mein sirf 10 email addresses save
+  ho sakte hain (counter "Saved (n/10)" dikhta hai). 11th save karne par
+  alert aata hai — pehle koi saved email delete karo. Saved emails tab tak
+  rehte hain jab tak user khud delete na kare (localStorage mein save hote
+  hain, per logged-in user; delete ✕ button Saved Emails view mein hai).
+  (2026-11-27 correction: pehle Saved mein mail MESSAGES save hote the —
+  ab sirf email ADDRESSES save hote hain, kyunki user ko favorite email
+  chahiye tha, mail nahi. Purani saved messages load par drop ho jati
+  hain.)
 - **Disclaimer ticker:** site ka slogan "Temp mail. Zero spam. Full privacy."
   (header mein title ke neeche, "Developed By ~~ Faizan Bashir 056" line ki
   jagah) aur uske neeche ek red scrolling line (marquee) chalti hai — 👑 کنگ فیضان بشیر (Noto
@@ -154,14 +158,14 @@ Register once, log in, then create a mailbox.
   ڈیویلپر مسٹر فیضان بشیر (Urdu mein bhi). Disclaimer hata diya gaya hai.
   Hover karne par ticker ruk jata hai.
 
-## Added 2026-11-27 — Save mail button, random domain, back ✕
-- **Save mail button (action row):** Email box ke neeche wale buttons
-  (Custom / Refresh / Saved / Recents) mein **Save mail** button bhi hai —
-  inbox ki sab se upar wali (nayi) mail ko seedha Saved Mails mein daal
-  deta hai (max 10, delete karne tak rehti hai). Dobara dabao to unsave;
-  label 'Saved ✓' ho jata hai jab nayi mail saved ho. Inbox khali ho to
-  alert aata hai. (Mail card par Save aur modal mein Save mail pehle se
-  the — ye teesra rasta hai.)
+## Added 2026-11-27 — Save email button, random domain, back ✕
+- **Save email button (action row):** Email box ke neeche wale buttons
+  (Custom / Refresh / Saved / Recents) mein **Save email** button hai —
+  current email address ko Saved Emails (favorites) mein daal deta hai
+  (max 10, delete karne tak rehta hai). Dobara dabao to unsave; label
+  'Saved ✓' ho jata hai jab current email saved ho. Saved Emails se Open
+  dabao to wahi address dobara khul jata hai. (Mail messages save nahi
+  hote — card aur modal wale Save buttons hata diye gaye.)
 - **New = random domain:** New dabane par Gmail / Outlook / Hotmail /
   high.edu.pl mein se EK provider random pick hota hai (dot sirf Gmail
   ke liye, baaki plus-only). Pehle provider param nahi bheja jata tha,
@@ -169,10 +173,14 @@ Register once, log in, then create a mailbox.
 - **1SecMail band:** temp.tf-only mode mein 1SecMail pehle se band hai —
   creation chain mein sirf temp.tf hai, Custom dropdown mein sirf 4
   temp.tf domains hain. Is ke liye koi code change nahi chahiye tha.
-- **Back / close ✕:** Saved Mails view mein title ke paas ✕ button hai —
+- **Back / close ✕:** Saved Emails view mein title ke paas ✕ button hai —
   dabao to Inbox wapas aa jata hai (pehle wapas jaane ka koi rasta nahi
   tha). Recents list ke header mein ✕ hai — dabao to list band ho jati
-  hai. Mail modal aur Custom modal mein ✕ pehle se tha.
+  hai. Custom modal mein neeche **← Back** button bhi hai (aur upar wala ✕
+  ab zyada saaf dikhta hai). Mail modal mein ✕ pehle se tha.
+- **Copy button (New se opar):** Email address copy karne ke liye New
+  button ke upar ek bara **Copy** button bhi hai (input ke andar wala
+  chhota copy icon bhi waisa ka waisa hai).
 
 ## Honest limit
 This is a static single-file site, so login data and saved mails live in that

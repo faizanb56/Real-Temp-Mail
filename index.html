@@ -190,16 +190,19 @@
                     <i class="fas fa-copy"></i>
                 </button>
             </div>
-            <button id="new-email-btn" class="acc-bg text-white font-bold p-4 rounded-2xl transition-all flex items-center justify-center gap-2">
-                <i class="fas fa-random"></i> New
-            </button>
+            <div class="flex flex-col gap-2">
+                <button onclick="copyText(account); $('status-line').textContent='Address copied!'" class="bg-zinc-800 hover:bg-zinc-700 text-white font-bold px-4 py-2 rounded-2xl flex items-center justify-center gap-2 text-sm"><i class="fas fa-copy"></i> Copy</button>
+                <button id="new-email-btn" class="acc-bg text-white font-bold p-4 rounded-2xl transition-all flex items-center justify-center gap-2 flex-1">
+                    <i class="fas fa-random"></i> New
+                </button>
+            </div>
         </div>
         <div class="mt-3 flex flex-wrap gap-2 justify-center">
             <button onclick="customAddress()" class="text-xs bg-zinc-800 hover:bg-zinc-700 px-3 py-2 rounded-xl"><i class="fas fa-pen"></i> Custom</button>
             <button onclick="fetchMessages(true)" class="text-xs bg-zinc-800 hover:bg-zinc-700 px-3 py-2 rounded-xl"><i class="fas fa-sync"></i> Refresh</button>
             <button onclick="showSaved()" class="text-xs bg-zinc-800 hover:bg-zinc-700 px-3 py-2 rounded-xl"><i class="fas fa-bookmark"></i> Saved (<span id="saved-count">0</span>)</button>
             <button onclick="showRecents()" class="text-xs bg-zinc-800 hover:bg-zinc-700 px-3 py-2 rounded-xl"><i class="fas fa-history"></i> Recents</button>
-            <button onclick="saveLatestMail()" class="text-xs bg-zinc-800 hover:bg-zinc-700 px-3 py-2 rounded-xl"><i class="fas fa-bookmark"></i> <span id="save-mail-btn-label">Save mail</span></button>
+            <button onclick="saveCurrentEmail()" class="text-xs bg-zinc-800 hover:bg-zinc-700 px-3 py-2 rounded-xl"><i class="fas fa-bookmark"></i> <span id="save-email-btn-label">Save email</span></button>
         </div>
         <div class="mt-4 flex items-center justify-center gap-2 text-[10px] text-gray-500 uppercase tracking-widest">
             <span class="inline-block w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
@@ -241,7 +244,6 @@
             </div>
             <div class="p-4 flex flex-wrap gap-2 border-b border-zinc-800">
                 <button id="copy-otp-btn" onclick="copyOtp()" class="hidden text-xs acc-bg text-white px-3 py-2 rounded-xl"><i class="fas fa-key"></i> Copy OTP: <span id="otp-value"></span></button>
-                <button onclick="toggleSaveCurrent()" class="text-xs bg-zinc-800 hover:bg-zinc-700 px-3 py-2 rounded-xl"><i class="fas fa-bookmark"></i> <span id="save-btn-label">Save mail</span></button>
                 <button onclick="copyMailBody()" class="text-xs bg-zinc-800 hover:bg-zinc-700 px-3 py-2 rounded-xl"><i class="fas fa-copy"></i> Copy text</button>
             </div>
             <div id="modal-body" class="p-6 overflow-y-auto max-h-[60vh] text-gray-300 leading-relaxed">
@@ -255,7 +257,7 @@
         <div class="bg-zinc-900 w-full max-w-md rounded-3xl overflow-hidden border border-zinc-800 p-6">
             <div class="flex justify-between items-start mb-4">
                 <h3 class="text-xl font-bold acc-text">Custom Address</h3>
-                <button onclick="$('custom-modal').classList.add('hidden')" class="text-zinc-500 hover:text-white"><i class="fas fa-times text-2xl"></i></button>
+                <button onclick="$('custom-modal').classList.add('hidden')" class="text-zinc-300 hover:text-white"><i class="fas fa-times text-2xl"></i></button>
             </div>
             <div id="custom-local-row">
                 <label class="text-xs text-zinc-400">Name (local part)</label>
@@ -275,6 +277,7 @@
             <p class="text-sm text-zinc-300 mb-4">Preview: <span id="custom-preview" class="acc-text font-bold"></span></p>
             <p id="custom-err" class="text-red-400 text-sm mb-2 hidden"></p>
             <button onclick="createCustomAddress()" class="w-full acc-bg text-white font-bold p-3 rounded-xl">Create this address</button>
+            <button onclick="$('custom-modal').classList.add('hidden')" class="w-full bg-zinc-800 hover:bg-zinc-700 text-white font-bold p-3 rounded-xl mt-2">← Back</button>
         </div>
     </div>
 
@@ -333,7 +336,11 @@
         }
         function loadData() {
             const d = store.get(dataKey(currentUser), { mailboxes: [], saved: [], current: null });
-            mailboxes = d.mailboxes || []; saved = d.saved || []; account = d.current || null;
+            mailboxes = d.mailboxes || [];
+            /* Saved ab email ADDRESSES hain (favorites), mail messages nahi —
+               purani saved messages (jin mein .address nahi) ko drop karo. */
+            saved = (d.saved || []).filter(s => s && typeof s.address === 'string');
+            account = d.current || null;
             $('saved-count').textContent = saved.length + '/10';
             messages = [];
             if (account) {
@@ -754,13 +761,12 @@
             }
         }
         function renderInbox() {
-            const list = inboxView === 'saved' ? saved : messages;
             const inboxEl = $('inbox');
             /* Back ✕ (sirf Saved view mein dikhta hai — Inbox wapas) aur
-               action-row Save mail button ka label (nayi mail saved hai
-               to 'Saved ✓', warna 'Save mail'). */
+               action-row Save email button ka label (current email saved
+               hai to 'Saved ✓', warna 'Save email'). */
             const bb = $('back-inbox-btn'); if (bb) bb.classList.toggle('hidden', inboxView !== 'saved');
-            const sl = $('save-mail-btn-label'); if (sl) sl.textContent = (messages.length && saved.some(s => String(s.id) === String(messages[0].id))) ? 'Saved ✓' : 'Save mail';
+            const sl = $('save-email-btn-label'); if (sl) sl.textContent = (account && saved.some(s => s.address === account)) ? 'Saved ✓' : 'Save email';
             /* BUG FIX (2026-11-19 browser test): #status-msg #inbox ke ANDAR hai.
                Pehle non-empty render mein inboxEl.innerHTML = '' usko hamesha ke
                liye delete kar deta tha — uske baad har render "Cannot read
@@ -778,60 +784,71 @@
                 inboxEl.appendChild(statusEl);
             }
             inboxEl.querySelectorAll('.mail-card').forEach(e => e.remove());
-            if (!list.length) {
+            /* Saved view: saved EMAIL addresses (favorites) — mail messages
+               nahi. Har row: Open (wahi mailbox dobara kholo) / Copy / ✕. */
+            if (inboxView === 'saved') {
+                if (!saved.length) {
+                    statusEl.classList.remove('hidden');
+                    statusEl.innerHTML = '<div class="loader w-8 h-8 border-4 border-zinc-700 rounded-full mx-auto mb-4"></div>Koi saved email nahi hai.';
+                    return;
+                }
+                statusEl.classList.add('hidden');
+                saved.forEach(s => {
+                    const card = document.createElement('div');
+                    card.className = 'mail-card p-5 bg-zinc-900 rounded-2xl border border-zinc-800 transition-all flex justify-between items-center';
+                    card.innerHTML = '<div class="flex-1 min-w-0"><h4 class="font-bold acc-text truncate">' + esc(s.address) + '</h4><p class="text-xs text-gray-500 mt-1">' + esc(providerDisplay(s.provider, s.address)) + ' • ' + new Date(s.createdAt).toLocaleDateString() + '</p></div><span class="flex gap-2 ml-2 shrink-0"><button class="text-xs acc-text font-bold px-2" onclick="openSavedEmail(\'' + esc(s.address) + '\')">Open</button><button class="text-xs text-zinc-400 px-2" onclick="copyText(\'' + esc(s.address) + '\')">Copy</button><button class="text-red-400 hover:text-red-300 text-lg leading-none px-2" onclick="deleteSaved(\'' + esc(s.address) + '\', event)" title="Delete saved email">✕</button></span>';
+                    inboxEl.appendChild(card);
+                });
+                return;
+            }
+            if (!messages.length) {
                 statusEl.classList.remove('hidden');
-                statusEl.innerHTML = '<div class="loader w-8 h-8 border-4 border-zinc-700 rounded-full mx-auto mb-4"></div>' + (inboxView === 'saved' ? 'Koi saved mail nahi hai.' : 'Inbox khali hai. Abhi tak koi mail nahi aaya.');
+                statusEl.innerHTML = '<div class="loader w-8 h-8 border-4 border-zinc-700 rounded-full mx-auto mb-4"></div>Inbox khali hai. Abhi tak koi mail nahi aaya.';
                 return;
             }
             statusEl.classList.add('hidden');
-            list.forEach(msg => {
+            messages.forEach(msg => {
                 const card = document.createElement('div');
                 card.className = 'mail-card p-5 bg-zinc-900 rounded-2xl border border-zinc-800 cursor-pointer transition-all flex justify-between items-center';
                 const otp = extractOtp((msg.subject || '') + ' ' + (msg.intro || ''));
-                card.innerHTML = '<div class="flex-1 min-w-0"><h4 class="font-bold acc-text truncate">' + esc(msg.from) + '</h4><p class="text-sm text-gray-300 truncate font-semibold">' + esc(msg.subject) + '</p><p class="text-xs text-gray-500 mt-1">' + esc(msg.intro || '') + '</p>' + (otp ? '<p class="text-xs mt-1 acc-text font-bold">OTP: ' + esc(otp) + '</p>' : '') + '</div><div class="ml-4 text-[10px] text-gray-600 font-mono">' + new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + '</div>' + (inboxView === 'saved' ? '<button class="ml-2 shrink-0 text-red-400 hover:text-red-300 text-lg leading-none px-2" onclick="deleteSaved(\'' + esc(msg.id) + '\', event)" title="Delete saved mail">✕</button>' : (inboxView === 'inbox' ? '<button class="ml-2 shrink-0 text-xs acc-text font-bold px-2" onclick="toggleSaveMail(\'' + esc(msg.id) + '\', event)">' + (saved.some(s => String(s.id) === String(msg.id)) ? 'Saved ✓' : 'Save') + '</button>' : ''));
+                card.innerHTML = '<div class="flex-1 min-w-0"><h4 class="font-bold acc-text truncate">' + esc(msg.from) + '</h4><p class="text-sm text-gray-300 truncate font-semibold">' + esc(msg.subject) + '</p><p class="text-xs text-gray-500 mt-1">' + esc(msg.intro || '') + '</p>' + (otp ? '<p class="text-xs mt-1 acc-text font-bold">OTP: ' + esc(otp) + '</p>' : '') + '</div><div class="ml-4 text-[10px] text-gray-600 font-mono">' + new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + '</div>';
                 card.onclick = () => openMail(msg.id);
                 inboxEl.appendChild(card);
             });
         }
         function extractOtp(text) { const m = String(text || '').match(/\b\d{4,8}\b/); return m ? m[0] : null; }
-        /* Saved mail delete (Saved view mein har card par ✕ button).
-           Inbox wale mails delete nahi hote — wo server par hote hain aur
-           Refresh par wapas aa jayenge; sirf Saved list se hatate hain. */
-        function deleteSaved(id, ev) {
-            if (ev) ev.stopPropagation(); // card ka openMail na khule
-            saved = saved.filter(s => String(s.id) !== String(id));
+        /* Saved EMAIL delete (Saved Emails view mein har card par ✕).
+           Sirf favorites list se hatata hai — mailbox/server par kuch
+           nahi hota. */
+        function deleteSaved(address, ev) {
+            if (ev) ev.stopPropagation();
+            saved = saved.filter(s => s.address !== address);
             saveData();
-            if (currentMsg && String(currentMsg.id) === String(id)) { currentMsg = null; $('mail-modal').classList.add('hidden'); }
             if (inboxView === 'saved') renderInbox();
         }
-        /* Inbox card par Save button — mail khole baghair seedha Saved mein
-           daalo, phir wo Saved Mails mein rehta hai. Dobara dabao to
-           Unsave ho jata hai (label 'Saved ✓' se 'Save' ho jata hai). */
-        function toggleSaveMail(id, ev) {
-            if (ev) ev.stopPropagation(); // card ka openMail na khule
-            const msg = messages.find(m => String(m.id) === String(id));
-            if (!msg) return;
-            const i = saved.findIndex(s => String(s.id) === String(id));
+        /* Action row ka Save email button — CURRENT email address ko
+           favorites mein save karo (max 10). Dobara dabao to unsave.
+           Saved Emails se user jab chahe wahi address dobara khol sakta
+           hai (Open) — jaise favorite email. */
+        function saveCurrentEmail() {
+            if (!account) { alert('Pehle ek email address banao (New dabao).'); return; }
+            const i = saved.findIndex(s => s.address === account);
             if (i >= 0) saved.splice(i, 1);
             else {
-                if (saved.length >= MAX_SAVED) { alert('Sirf 10 mails save ho sakti hain — pehle koi saved mail delete karo.'); return; }
-                saved.unshift(msg);
+                if (saved.length >= MAX_SAVED) { alert('Sirf 10 emails save ho sakti hain — pehle koi saved email delete karo.'); return; }
+                saved.unshift({ address: account, provider: provider, createdAt: Date.now() });
             }
             saveData(); renderInbox();
         }
-        /* Action row ka Save mail button — inbox ki sab se upar wali (nayi)
-           mail ko Saved mein daalo (max 10). Dobara dabao to unsave.
-           Inbox khali ho to alert. */
-        function saveLatestMail() {
-            if (!messages.length) { alert('Inbox khali hai — abhi koi mail nahi aaya.'); return; }
-            const msg = messages[0];
-            const i = saved.findIndex(s => String(s.id) === String(msg.id));
-            if (i >= 0) saved.splice(i, 1);
-            else {
-                if (saved.length >= MAX_SAVED) { alert('Sirf 10 mails save ho sakti hain — pehle koi saved mail delete karo.'); return; }
-                saved.unshift(msg);
-            }
-            saveData(); renderInbox();
+        /* Saved Emails se ek address dobara kholo. Agar wo mailbox
+           Recents mein hai to switch karo; warna naya mailbox entry
+           bana kar uska inbox check karo (temp.tf addresses dobara
+           check ho jate hain). */
+        function openSavedEmail(address) {
+            const mb = mailboxes.find(m => m.address === address);
+            if (mb) { switchMailbox(address); return; }
+            const s = saved.find(x => x.address === address);
+            useMailbox({ address: address, password: '', token: '', provider: (s && s.provider) || 'temp.tf', createdAt: (s && s.createdAt) || Date.now(), messages: [] });
         }
 
         /* ---------- Open mail, Copy OTP, Save ---------- */
@@ -874,25 +891,13 @@
                 currentOtp = extractOtp((msg.subject || '') + ' ' + (body || '') + ' ' + (msg.intro || ''));
                 const otpBtn = $('copy-otp-btn');
                 if (currentOtp) { otpBtn.classList.remove('hidden'); $('otp-value').textContent = currentOtp; } else otpBtn.classList.add('hidden');
-                $('save-btn-label').textContent = saved.some(s => s.id === msg.id) ? 'Unsave mail' : 'Save mail';
                 $('mail-modal').classList.remove('hidden');
             } catch (err) { alert('Mail load nahi ho saka.'); }
         }
         function closeModal() { $('mail-modal').classList.add('hidden'); }
         function copyOtp() { if (currentOtp) { navigator.clipboard.writeText(currentOtp); alert('OTP copy ho gaya: ' + currentOtp); } }
         function copyMailBody() { if (currentMsg) navigator.clipboard.writeText(currentMsg.body || $('modal-body').innerText || ''); }
-        function toggleSaveCurrent() {
-            if (!currentMsg) return;
-            const i = saved.findIndex(s => s.id === currentMsg.id);
-            if (i >= 0) saved.splice(i, 1);
-            else {
-                if (saved.length >= MAX_SAVED) { alert('Sirf 10 mails save ho sakti hain — pehle koi saved mail delete karo.'); return; }
-                saved.unshift(currentMsg);
-            }
-            saveData(); $('save-btn-label').textContent = i >= 0 ? 'Save mail' : 'Unsave mail';
-            if (inboxView === 'saved') renderInbox();
-        }
-        function showSaved() { inboxView = 'saved'; $('inbox-title').textContent = 'Saved Mails'; $('recents-box').classList.add('hidden'); renderInbox(); }
+        function showSaved() { inboxView = 'saved'; $('inbox-title').textContent = 'Saved Emails'; $('recents-box').classList.add('hidden'); renderInbox(); }
         /* Saved view se Inbox wapas (title ke paas wala ✕ button). */
         function showInbox() { inboxView = 'inbox'; $('inbox-title').textContent = 'Inbox'; renderInbox(); }
         function showRecents() {
